@@ -1,4 +1,5 @@
-## Glock - Distributed Locking (Mono repo)
+## Glock (gee - lock)
+### In-memory lock queue
 
 This repo contains:
 - `glock-server`: HTTP lock service (in-memory)
