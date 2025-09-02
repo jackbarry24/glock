@@ -48,6 +48,7 @@ cleanup_interval: 30s
 - POST `/api/verify` { name, owner_id, token } → Check ownership
 - POST `/api/release` { name, owner_id, token }  → Release
 - POST `/api/poll` { name, request_id, owner_id } → Check queue status
+- POST `/api/remove` { name, request_id, owner_id } → Remove queued request
 - POST `/api/freeze/:name` → Freeze a lock to prevent acquisition/refresh
 - POST `/api/unfreeze/:name` → Unfreeze a lock to allow acquisition/refresh
 - GET `/api/status` → See all locks and ownership

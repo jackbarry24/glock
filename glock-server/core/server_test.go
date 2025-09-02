@@ -420,3 +420,124 @@ func TestQueueUpdateOperations(t *testing.T) {
 		t.Fatalf("MaxTTL should remain unchanged, got %v", updatedLock2.MaxTTL)
 	}
 }
+
+// TestRemoveFromQueueNonExistentLock tests removing from queue for non-existent lock
+func TestRemoveFromQueueNonExistentLock(t *testing.T) {
+	g := newServer(10)
+	removed, code, err := g.RemoveFromQueue(&PollRequest{
+		Name:      "non-existent",
+		RequestID: "some-id",
+		OwnerID:   "test-owner",
+	})
+	if err == nil || code != http.StatusNotFound || removed {
+		t.Fatalf("expected not found error, got code=%d err=%v removed=%v", code, err, removed)
+	}
+}
+
+// TestRemoveFromQueueNoQueue tests removing from lock without queue
+func TestRemoveFromQueueNoQueue(t *testing.T) {
+	g := newServer(10)
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:      "no-queue-lock",
+		TTL:       "1s",
+		MaxTTL:    "1m",
+		QueueType: QueueNone,
+	})
+
+	removed, code, err := g.RemoveFromQueue(&PollRequest{
+		Name:      "no-queue-lock",
+		RequestID: "some-id",
+		OwnerID:   "test-owner",
+	})
+	if err == nil || code != http.StatusNotFound || removed {
+		t.Fatalf("expected not found error for lock without queue, got code=%d err=%v removed=%v", code, err, removed)
+	}
+}
+
+// TestRemoveFromQueueInvalidRequestID tests removing non-existent request ID
+func TestRemoveFromQueueInvalidRequestID(t *testing.T) {
+	g := newServer(10)
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:      "queue-lock",
+		TTL:       "1s",
+		MaxTTL:    "1m",
+		QueueType: QueueFIFO,
+	})
+
+	removed, code, err := g.RemoveFromQueue(&PollRequest{
+		Name:      "queue-lock",
+		RequestID: "non-existent-id",
+		OwnerID:   "test-owner",
+	})
+	if err == nil || code != http.StatusNotFound || removed {
+		t.Fatalf("expected not found error for invalid request ID, got code=%d err=%v removed=%v", code, err, removed)
+	}
+}
+
+// TestRemoveFromQueueSuccess tests successful queue removal
+func TestRemoveFromQueueSuccess(t *testing.T) {
+	g := newServer(10)
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:      "remove-test-lock",
+		TTL:       "1s",
+		MaxTTL:    "1m",
+		QueueType: QueueFIFO,
+	})
+
+	// Acquire the lock first so queueing happens
+	_, _, _ = g.AcquireLock(&AcquireRequest{
+		Name:    "remove-test-lock",
+		Owner:   "first-owner",
+		OwnerID: "first-owner-id",
+	})
+
+	// Now try to acquire again, should queue
+	_, code, err := g.AcquireLock(&AcquireRequest{
+		Name:    "remove-test-lock",
+		Owner:   "second-owner",
+		OwnerID: "second-owner-id",
+	})
+
+	if err != nil || code != http.StatusAccepted {
+		t.Fatalf("second acquire should be queued, got code=%d err=%v", code, err)
+	}
+
+	// Get the request ID from the queue (this is a bit of a hack since we don't have direct access)
+	// In a real scenario, the request ID would come from the QueueResponse
+	// For testing, we'll create a request with a known ID
+	queueReq := &QueueRequest{
+		ID:        "test-request-id",
+		Name:      "remove-test-lock",
+		Owner:     "second-owner",
+		OwnerID:   "second-owner-id",
+		QueuedAt:  time.Now(),
+		TimeoutAt: time.Now().Add(time.Minute),
+	}
+
+	// Manually add to queue for testing
+	lockVal, _ := g.Locks.Load("remove-test-lock")
+	testLock := lockVal.(*Lock)
+	testLock.queue.Enqueue(queueReq, false)
+
+	// Now try to remove it
+	removed, code, err := g.RemoveFromQueue(&PollRequest{
+		Name:      "remove-test-lock",
+		RequestID: "test-request-id",
+		OwnerID:   "second-owner-id",
+	})
+
+	if err != nil || code != http.StatusOK || !removed {
+		t.Fatalf("expected successful removal, got code=%d err=%v removed=%v", code, err, removed)
+	}
+
+	// Verify it's actually removed by trying to poll for it
+	pollResp, code, err := g.PollQueue(&PollRequest{
+		Name:      "remove-test-lock",
+		RequestID: "test-request-id",
+		OwnerID:   "second-owner-id",
+	})
+
+	if pollResp.Status != "not_found" || code != http.StatusNotFound {
+		t.Fatalf("expected not_found after removal, got status=%s code=%d", pollResp.Status, code)
+	}
+}

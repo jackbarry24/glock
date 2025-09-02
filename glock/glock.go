@@ -128,10 +128,12 @@ func (g *Glock) GetLockByName(name string) (*Lock, bool) {
 
 // Acquire requests a lock from the glock-server and returns a Lock instance
 func (g *Glock) Acquire(lockName, owner string) (*Lock, error) {
+	queueRequest := false
 	acquireReq := AcquireRequest{
-		Name:    lockName,
-		Owner:   owner,
-		OwnerID: g.ID,
+		Name:         lockName,
+		Owner:        owner,
+		OwnerID:      g.ID,
+		QueueRequest: &queueRequest,
 	}
 	body, err := json.Marshal(acquireReq)
 	if err != nil {
@@ -249,12 +251,14 @@ func (g *Glock) CreateLockWithMetadata(name string, ttl, maxTTL string, queueTyp
 	return nil
 }
 
-// AcquireQueued attempts to acquire a lock, returning either the lock or queue info
-func (g *Glock) AcquireQueued(lockName, owner string) (*Lock, *QueueResponse, error) {
+// AcquireOrQueue attempts to acquire a lock, returning either the lock or queue info
+func (g *Glock) AcquireOrQueue(lockName, owner string) (*Lock, *QueueResponse, error) {
+	queueRequest := true
 	acquireReq := AcquireRequest{
-		Name:    lockName,
-		Owner:   owner,
-		OwnerID: g.ID,
+		Name:         lockName,
+		Owner:        owner,
+		OwnerID:      g.ID,
+		QueueRequest: &queueRequest,
 	}
 	body, err := json.Marshal(acquireReq)
 	if err != nil {
@@ -405,6 +409,97 @@ func (g *Glock) PollQueue(lockName, requestID string) (*PollResponse, error) {
 	}
 
 	return &pollResp, nil
+}
+
+// RemoveFromQueue removes a queued lock request
+func (g *Glock) RemoveFromQueue(lockName, requestID string) error {
+	req := PollRequest{
+		Name:      lockName,
+		RequestID: requestID,
+		OwnerID:   g.ID,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(g.ServerURL+"/api/remove", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return fmt.Errorf("server error: %s", errorMsg)
+		}
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// AcquireOrWait attempts to acquire a lock, waiting up to the specified timeout if queued
+func (g *Glock) AcquireOrWait(lockName, owner string, timeout time.Duration) (*Lock, error) {
+	// First try to acquire or queue
+	lock, queueResp, err := g.AcquireOrQueue(lockName, owner)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we got the lock immediately, return it
+	if lock != nil {
+		return lock, nil
+	}
+
+	// If we got a queue response, poll until timeout
+	if queueResp != nil {
+		startTime := time.Now()
+		pollInterval := 100 * time.Millisecond // Poll every 100ms
+
+		for {
+			// Check if we've exceeded the timeout
+			if time.Since(startTime) > timeout {
+				// Timeout reached, remove from queue
+				if removeErr := g.RemoveFromQueue(lockName, queueResp.RequestID); removeErr != nil {
+					fmt.Printf("Warning: failed to remove expired queue request %s: %v\n", queueResp.RequestID, removeErr)
+				}
+				return nil, fmt.Errorf("timeout waiting for lock after %v", timeout)
+			}
+
+			// Poll for status
+			pollResp, err := g.PollQueue(lockName, queueResp.RequestID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to poll queue: %v", err)
+			}
+
+			switch pollResp.Status {
+			case "ready":
+				if pollResp.Lock == nil {
+					return nil, fmt.Errorf("server indicated lock ready but no lock provided")
+				}
+				return pollResp.Lock, nil
+			case "waiting":
+				// Still waiting, sleep and try again
+				time.Sleep(pollInterval)
+			case "expired":
+				// Our request expired
+				return nil, fmt.Errorf("queue request expired")
+			case "not_found":
+				// Our request was removed or never existed
+				return nil, fmt.Errorf("queue request not found")
+			default:
+				return nil, fmt.Errorf("unknown poll status: %s", pollResp.Status)
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("unexpected response: no lock or queue information returned")
 }
 
 // StartHeartbeat starts a goroutine to refresh the lock before TTL expires

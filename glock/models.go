@@ -36,9 +36,10 @@ type UpdateResponse struct {
 }
 
 type AcquireRequest struct {
-	Name    string `json:"name" binding:"required"`
-	Owner   string `json:"owner" binding:"required"`
-	OwnerID string `json:"owner_id" binding:"required"`
+	Name         string `json:"name" binding:"required"`
+	Owner        string `json:"owner" binding:"required"`
+	OwnerID      string `json:"owner_id" binding:"required"`
+	QueueRequest *bool  `json:"queue_request,omitempty"` // nil = true (default), false = don't queue
 }
 
 type AcquireResponse struct {

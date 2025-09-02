@@ -77,9 +77,10 @@ type UpdateResponse struct {
 // AcquireRequest represents a request to acquire a lock
 // @Description AcquireRequest represents a request to acquire a lock
 type AcquireRequest struct {
-	Name    string `json:"name" binding:"required" example:"my-lock"`
-	Owner   string `json:"owner" binding:"required" example:"client-app"`
-	OwnerID string `json:"owner_id" binding:"required" example:"uuid-123"`
+	Name         string `json:"name" binding:"required" example:"my-lock"`
+	Owner        string `json:"owner" binding:"required" example:"client-app"`
+	OwnerID      string `json:"owner_id" binding:"required" example:"uuid-123"`
+	QueueRequest *bool  `json:"queue_request,omitempty"` // nil = true (default), false = don't queue
 }
 
 // AcquireResponse represents the response from acquiring a lock

@@ -73,6 +73,9 @@ func main() {
 		api.POST("/poll", func(c *gin.Context) {
 			core.PollHandler(c, locks)
 		})
+		api.POST("/remove", func(c *gin.Context) {
+			core.RemoveFromQueueHandler(c, locks)
+		})
 		api.POST("/freeze/:name", func(c *gin.Context) {
 			core.FreezeLockHandler(c, locks)
 		})

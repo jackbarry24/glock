@@ -17,9 +17,9 @@ This repo contains:
   // work ...
   _ = l.Release()
 
-  // Queue usage
+  // Queue usage - Manual polling
   err := g.CreateLock("queued-lock", "30s", "5m", glock.QueueFIFO, "2m")
-  lock, queueResp, err := g.AcquireQueued("queued-lock", "worker-1")
+  lock, queueResp, err := g.AcquireOrQueue("queued-lock", "worker-1")
   if queueResp != nil {
     // Lock is queued, poll for status
     for {
@@ -31,6 +31,9 @@ This repo contains:
       time.Sleep(time.Second)
     }
   }
+
+  // OR use the convenient AcquireOrWait method
+  lock, err := g.AcquireOrWait("queued-lock", "worker-1", 30*time.Second)
   if lock != nil {
     lock.StartHeartbeat()
     // work ...

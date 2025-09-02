@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,6 +61,7 @@ func NewTestServer(t *testing.T) *TestServer {
 		api.POST("/verify", func(c *gin.Context) { core.VerifyHandler(c, coreServer) })
 		api.POST("/release", func(c *gin.Context) { core.ReleaseHandler(c, coreServer) })
 		api.POST("/poll", func(c *gin.Context) { core.PollHandler(c, coreServer) })
+		api.POST("/remove", func(c *gin.Context) { core.RemoveFromQueueHandler(c, coreServer) })
 		api.GET("/status", func(c *gin.Context) { core.StatusHandler(c, coreServer) })
 		api.GET("/list", func(c *gin.Context) { core.ListHandler(c, coreServer) })
 	}
@@ -286,7 +288,7 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 	}
 
 	// Client2 tries to acquire - should get queued
-	lock2, queueResp, err := client2.AcquireQueued("queue-test", "owner2")
+	lock2, queueResp, err := client2.AcquireOrQueue("queue-test", "owner2")
 	if err != nil {
 		t.Fatalf("failed to queue acquisition for client2: %v", err)
 	}
@@ -623,5 +625,338 @@ func TestIntegrationClientConfiguration(t *testing.T) {
 	err = client.CreateLock("config-test", "30s", "5m", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock with configured client: %v", err)
+	}
+}
+
+// TestIntegrationAcquireOrWaitSuccess tests successful AcquireOrWait with immediate acquisition
+func TestIntegrationAcquireOrWaitSuccess(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client: %v", err)
+	}
+
+	// Create lock with no queue
+	err = client.CreateLock("immediate-acquire-test", "1s", "5m", QueueNone, "1m")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// AcquireOrWait should succeed immediately
+	lock, err := client.AcquireOrWait("immediate-acquire-test", "test-owner", 5*time.Second)
+	if err != nil {
+		t.Fatalf("AcquireOrWait should succeed immediately: %v", err)
+	}
+	if lock == nil {
+		t.Fatal("should have received lock immediately")
+	}
+	if lock.Name != "immediate-acquire-test" {
+		t.Fatal("lock name mismatch")
+	}
+
+	// Verify server state
+	serverLockVal, _ := server.Core().Locks.Load("immediate-acquire-test")
+	serverLock := serverLockVal.(*core.Lock)
+	if serverLock.Owner != "test-owner" {
+		t.Fatalf("server should show lock held by test-owner, got %s", serverLock.Owner)
+	}
+}
+
+// TestIntegrationAcquireOrWaitQueueSuccess tests AcquireOrWait with queue that eventually succeeds
+func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client1, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client1: %v", err)
+	}
+
+	client2, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client2: %v", err)
+	}
+
+	// Create lock with FIFO queue
+	err = client1.CreateLock("queue-wait-test", "200ms", "5m", QueueFIFO, "5s")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Client1 acquires the lock
+	lock1, err := client1.Acquire("queue-wait-test", "owner1")
+	if err != nil {
+		t.Fatalf("client1 failed to acquire lock: %v", err)
+	}
+
+	// Client2 tries AcquireOrWait - should wait and eventually succeed
+	var lock2 *Lock
+	done := make(chan bool, 1)
+
+	go func() {
+		var err error
+		lock2, err = client2.AcquireOrWait("queue-wait-test", "owner2", 3*time.Second)
+		if err != nil {
+			t.Errorf("AcquireOrWait failed: %v", err)
+		}
+		done <- true
+	}()
+
+	// Wait a bit then release client1's lock
+	time.Sleep(100 * time.Millisecond)
+	err = lock1.Release()
+	if err != nil {
+		t.Fatalf("failed to release lock1: %v", err)
+	}
+
+	// Wait for client2 to acquire the lock
+	select {
+	case <-done:
+		// Success!
+	case <-time.After(2 * time.Second):
+		t.Fatal("AcquireOrWait timed out waiting for lock")
+	}
+
+	if lock2 == nil {
+		t.Fatal("client2 should have acquired the lock")
+	}
+	if lock2.Name != "queue-wait-test" {
+		t.Fatal("lock name mismatch")
+	}
+
+	// Verify server state
+	serverLockVal, _ := server.Core().Locks.Load("queue-wait-test")
+	serverLock := serverLockVal.(*core.Lock)
+	if serverLock.Owner != "owner2" {
+		t.Fatalf("server should show lock held by owner2, got %s", serverLock.Owner)
+	}
+}
+
+// TestIntegrationAcquireOrWaitTimeout tests AcquireOrWait timeout behavior
+func TestIntegrationAcquireOrWaitTimeout(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client1, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client1: %v", err)
+	}
+
+	client2, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client2: %v", err)
+	}
+
+	// Create lock with FIFO queue
+	err = client1.CreateLock("timeout-test", "1s", "5m", QueueFIFO, "5s")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Client1 acquires the lock and holds it
+	_, err = client1.Acquire("timeout-test", "owner1")
+	if err != nil {
+		t.Fatalf("client1 failed to acquire lock: %v", err)
+	}
+
+	// Client2 tries AcquireOrWait with short timeout - should timeout
+	start := time.Now()
+	lock2, err := client2.AcquireOrWait("timeout-test", "owner2", 200*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("AcquireOrWait should have timed out")
+	}
+	if lock2 != nil {
+		t.Fatal("should not have received lock after timeout")
+	}
+	if elapsed < 150*time.Millisecond || elapsed > 300*time.Millisecond {
+		t.Fatalf("timeout took %v, expected around 200ms", elapsed)
+	}
+
+	// Verify error message contains timeout info
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("error should mention timeout, got: %v", err)
+	}
+
+	// Verify the queue entry was cleaned up
+	// We can't easily verify this directly, but the test passing indicates
+	// the RemoveFromQueue call succeeded (no panic/error in AcquireOrWait)
+}
+
+// TestIntegrationRemoveFromQueue tests the RemoveFromQueue functionality
+func TestIntegrationRemoveFromQueue(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client1, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client1: %v", err)
+	}
+
+	client2, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client2: %v", err)
+	}
+
+	// Create lock with FIFO queue
+	err = client1.CreateLock("remove-queue-test", "1s", "5m", QueueFIFO, "5s")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Client1 acquires the lock
+	lock1, err := client1.Acquire("remove-queue-test", "owner1")
+	if err != nil {
+		t.Fatalf("client1 failed to acquire lock: %v", err)
+	}
+
+	// Client2 tries to acquire - should get queued
+	lock2, queueResp, err := client2.AcquireOrQueue("remove-queue-test", "owner2")
+	if err != nil {
+		t.Fatalf("client2 failed to queue: %v", err)
+	}
+	if lock2 != nil || queueResp == nil {
+		t.Fatal("client2 should have been queued")
+	}
+
+	// Manually remove the queue entry
+	err = client2.RemoveFromQueue("remove-queue-test", queueResp.RequestID)
+	// Note: RemoveFromQueue can fail with 404 if the request has already expired
+	// or been processed, which is acceptable behavior
+	if err != nil && !strings.Contains(err.Error(), "404") {
+		t.Fatalf("unexpected error removing from queue: %v", err)
+	}
+
+	// Try to poll the removed request - should get not_found
+	pollResp, err := client2.PollQueue("remove-queue-test", queueResp.RequestID)
+	if err != nil {
+		t.Fatalf("poll after removal failed: %v", err)
+	}
+	if pollResp.Status != "not_found" {
+		t.Fatalf("expected not_found after removal, got '%s'", pollResp.Status)
+	}
+
+	// Release client1's lock
+	err = lock1.Release()
+	if err != nil {
+		t.Fatalf("failed to release lock1: %v", err)
+	}
+
+	// Try to acquire with a new client - should succeed immediately
+	client3, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client3: %v", err)
+	}
+
+	lock3, err := client3.Acquire("remove-queue-test", "owner3")
+	if err != nil {
+		t.Fatalf("client3 should be able to acquire immediately: %v", err)
+	}
+	if lock3 == nil {
+		t.Fatal("client3 should have received the lock")
+	}
+}
+
+// TestIntegrationAcquireOrWaitZeroTimeout tests AcquireOrWait with zero timeout
+func TestIntegrationAcquireOrWaitZeroTimeout(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client: %v", err)
+	}
+
+	// Create lock and acquire it
+	err = client.CreateLock("zero-timeout-test", "1s", "5m", QueueNone, "1m")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	lock, err := client.Acquire("zero-timeout-test", "owner1")
+	if err != nil {
+		t.Fatalf("failed to acquire lock: %v", err)
+	}
+
+	// Create second client
+	client2, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client2: %v", err)
+	}
+
+	// Try AcquireOrWait with zero timeout - should fail immediately
+	start := time.Now()
+	lock2, err := client2.AcquireOrWait("zero-timeout-test", "owner2", 0)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("AcquireOrWait with zero timeout should fail")
+	}
+	if lock2 != nil {
+		t.Fatal("should not receive lock with zero timeout")
+	}
+	if elapsed > 50*time.Millisecond {
+		t.Fatalf("zero timeout should fail immediately, took %v", elapsed)
+	}
+
+	// Release first lock
+	err = lock.Release()
+	if err != nil {
+		t.Fatalf("failed to release lock: %v", err)
+	}
+}
+
+// TestIntegrationAcquireOrWaitExpiredRequest tests AcquireOrWait with expired queue request
+func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client1, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client1: %v", err)
+	}
+
+	client2, err := Connect(server.URL())
+	if err != nil {
+		t.Fatalf("failed to connect client2: %v", err)
+	}
+
+	// Create lock with very short queue timeout
+	err = client1.CreateLock("expired-queue-test", "1s", "5m", QueueFIFO, "100ms")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Client1 acquires the lock
+	_, err = client1.Acquire("expired-queue-test", "owner1")
+	if err != nil {
+		t.Fatalf("client1 failed to acquire lock: %v", err)
+	}
+
+	// Client2 tries to queue
+	_, queueResp, err := client2.AcquireOrQueue("expired-queue-test", "owner2")
+	if err != nil {
+		t.Fatalf("client2 failed to queue: %v", err)
+	}
+	if queueResp == nil {
+		t.Fatal("client2 should have been queued")
+	}
+
+	// Wait for queue timeout to expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Client2 tries AcquireOrWait - should get expired error
+	lock2, err := client2.AcquireOrWait("expired-queue-test", "owner2", 1*time.Second)
+	if err == nil {
+		t.Fatal("AcquireOrWait should fail with expired request")
+	}
+	if lock2 != nil {
+		t.Fatal("should not receive lock with expired request")
+	}
+	if !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("error should mention expired, got: %v", err)
 	}
 }

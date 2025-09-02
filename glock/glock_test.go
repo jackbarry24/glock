@@ -183,3 +183,110 @@ func TestQueueBehaviorConstants(t *testing.T) {
 		t.Errorf("expected QueueLIFO to be 'lifo', got '%s'", QueueLIFO)
 	}
 }
+
+// TestRemoveFromQueue tests the RemoveFromQueue method
+func TestRemoveFromQueue(t *testing.T) {
+	// This test requires a running server, so we'll test the method structure
+	client, err := Connect("http://test-server:8080")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Test that the method exists and has the right signature
+	// We can't easily test the HTTP call without mocking, but we can test method presence
+	err = client.RemoveFromQueue("test-lock", "test-request-id")
+	// This will fail with connection error, but that's expected for this test
+	if err == nil {
+		t.Error("expected connection error, but got none")
+	}
+}
+
+// TestAcquireOrWaitTimeout tests AcquireOrWait with timeout
+func TestAcquireOrWaitTimeout(t *testing.T) {
+	client, err := Connect("http://test-server:8080")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Test with a very short timeout - should fail quickly
+	start := time.Now()
+	lock, err := client.AcquireOrWait("test-lock", "test-owner", 10*time.Millisecond)
+	elapsed := time.Since(start)
+
+	// Should fail with connection error due to test server not existing
+	if err == nil {
+		t.Error("expected connection error, but got none")
+	}
+	if lock != nil {
+		t.Error("expected no lock on error, but got one")
+	}
+
+	// Should have failed quickly (less than 100ms even with retries)
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("expected quick failure, but took %v", elapsed)
+	}
+}
+
+// TestAcquireOrWaitMethodSignature tests that AcquireOrWait has the right signature
+func TestAcquireOrWaitMethodSignature(t *testing.T) {
+	client, err := Connect("http://test-server:8080")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Test that we can call the method (it will fail with network error, but signature is correct)
+	lock, err := client.AcquireOrWait("test-lock", "test-owner", time.Second)
+
+	// Should fail with connection error
+	if err == nil {
+		t.Error("expected connection error, but got none")
+	}
+	if lock != nil {
+		t.Error("expected no lock on error, but got one")
+	}
+}
+
+// TestAcquireOrWaitZeroTimeout tests AcquireOrWait with zero timeout
+func TestAcquireOrWaitZeroTimeout(t *testing.T) {
+	client, err := Connect("http://test-server:8080")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Test with zero timeout
+	lock, err := client.AcquireOrWait("test-lock", "test-owner", 0)
+
+	// Should fail immediately with connection error
+	if err == nil {
+		t.Error("expected connection error, but got none")
+	}
+	if lock != nil {
+		t.Error("expected no lock on error, but got one")
+	}
+}
+
+// TestAcquireOrWaitNegativeTimeout tests AcquireOrWait with negative timeout
+func TestAcquireOrWaitNegativeTimeout(t *testing.T) {
+	client, err := Connect("http://test-server:8080")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Test with negative timeout (should behave like zero timeout)
+	start := time.Now()
+	lock, err := client.AcquireOrWait("test-lock", "test-owner", -time.Second)
+	elapsed := time.Since(start)
+
+	// Should fail with connection error
+	if err == nil {
+		t.Error("expected connection error, but got none")
+	}
+	if lock != nil {
+		t.Error("expected no lock on error, but got one")
+	}
+
+	// Should fail quickly
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("expected quick failure, but took %v", elapsed)
+	}
+}

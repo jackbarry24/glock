@@ -384,11 +384,53 @@ func PollHandler(c *gin.Context, g *GlockServer) {
 	}
 
 	resp, code, err := g.PollQueue(&req)
-	if err != nil {
+	if err != nil && resp == nil {
+		// Only return error if we don't have a response to return
 		c.JSON(code, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(code, resp)
+}
+
+// RemoveFromQueueHandler handles the /remove route for removing queued requests
+// @Summary Remove a request from queue
+// @Description Remove a queued lock acquisition request
+// @Tags queue
+// @Accept json
+// @Produce json
+// @Param request body PollRequest true "Queue removal parameters"
+// @Success 200 {object} map[string]bool
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /remove [post]
+func RemoveFromQueueHandler(c *gin.Context, g *GlockServer) {
+	var req PollRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if req.RequestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request_id must not be empty"})
+		return
+	}
+
+	if !IsValidOwner(req.OwnerID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
+		return
+	}
+
+	success, code, err := g.RemoveFromQueue(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"removed": success})
 }
 
 // StatusHandler handles the /status route.

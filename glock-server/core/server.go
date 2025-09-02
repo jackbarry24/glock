@@ -259,7 +259,13 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	}
 
 	// Lock is not available, check queue behavior
-	if lock.QueueType == QueueNone {
+	// Default to true if not specified (backwards compatibility)
+	shouldQueue := true
+	if req.QueueRequest != nil {
+		shouldQueue = *req.QueueRequest
+	}
+
+	if lock.QueueType == QueueNone || !shouldQueue {
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
 
@@ -358,6 +364,29 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 	}
 
 	return &PollResponse{Status: "not_found"}, http.StatusNotFound, fmt.Errorf("request not found in queue")
+}
+
+func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
+	lockVal, exists := g.Locks.Load(req.Name)
+	if !exists {
+		return false, http.StatusNotFound, fmt.Errorf("lock not found")
+	}
+	lock := lockVal.(*Lock)
+
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	if lock.queue == nil {
+		return false, http.StatusNotFound, fmt.Errorf("no queue for this lock")
+	}
+
+	// Try to remove the request
+	removed := lock.queue.Remove(req.RequestID)
+	if removed == nil {
+		return false, http.StatusNotFound, fmt.Errorf("request not found in queue")
+	}
+
+	return true, http.StatusOK, nil
 }
 
 func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
