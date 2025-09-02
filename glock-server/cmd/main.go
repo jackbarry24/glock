@@ -16,21 +16,10 @@ import (
 
 // @title Glock Server API
 // @version 1.0
-// @description A distributed lock server with queuing support
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name MIT
-// @license.url https://opensource.org/licenses/MIT
+// @description In-memory lock queue
 
 // @host localhost:8080
 // @BasePath /
-
-// @externalDocs.description OpenAPI
-// @externalDocs.url https://swagger.io/resources/open-api/
 func main() {
 	// Load configuration
 	configFile := os.Getenv("GLOCK_CONFIG_FILE")
@@ -52,47 +41,61 @@ func main() {
 	// Setup Gin router
 	r := gin.Default()
 
-	// Lock management endpoints
-	r.POST("/create", func(c *gin.Context) {
-		core.CreateHandler(c, locks)
-	})
-	r.POST("/update", func(c *gin.Context) {
-		core.UpdateHandler(c, locks)
-	})
-	r.DELETE("/delete/:name", func(c *gin.Context) {
-		core.DeleteHandler(c, locks)
-	})
-	r.POST("/acquire", func(c *gin.Context) {
-		core.AcquireHandler(c, locks)
-	})
-	r.POST("/refresh", func(c *gin.Context) {
-		core.RefreshHandler(c, locks)
-	})
-	r.POST("/verify", func(c *gin.Context) {
-		core.VerifyHandler(c, locks)
-	})
-	r.POST("/release", func(c *gin.Context) {
-		core.ReleaseHandler(c, locks)
-	})
-	r.POST("/poll", func(c *gin.Context) {
-		core.PollHandler(c, locks)
-	})
+	// Serve static files for the dashboard
+	r.Static("/static", "./static")
+	r.StaticFile("/", "./static/index.html")
 
-	// Status and listing endpoints
-	r.GET("/status", func(c *gin.Context) {
-		core.StatusHandler(c, locks)
-	})
-	r.GET("/list", func(c *gin.Context) {
-		core.ListHandler(c, locks)
-	})
+	// API routes group
+	api := r.Group("/api")
+	{
+		// Lock management endpoints
+		api.POST("/create", func(c *gin.Context) {
+			core.CreateHandler(c, locks)
+		})
+		api.POST("/update", func(c *gin.Context) {
+			core.UpdateHandler(c, locks)
+		})
+		api.DELETE("/delete/:name", func(c *gin.Context) {
+			core.DeleteHandler(c, locks)
+		})
+		api.POST("/acquire", func(c *gin.Context) {
+			core.AcquireHandler(c, locks)
+		})
+		api.POST("/refresh", func(c *gin.Context) {
+			core.RefreshHandler(c, locks)
+		})
+		api.POST("/verify", func(c *gin.Context) {
+			core.VerifyHandler(c, locks)
+		})
+		api.POST("/release", func(c *gin.Context) {
+			core.ReleaseHandler(c, locks)
+		})
+		api.POST("/poll", func(c *gin.Context) {
+			core.PollHandler(c, locks)
+		})
+		api.POST("/freeze/:name", func(c *gin.Context) {
+			core.FreezeLockHandler(c, locks)
+		})
+		api.POST("/unfreeze/:name", func(c *gin.Context) {
+			core.UnfreezeLockHandler(c, locks)
+		})
 
-	// Configuration endpoints
-	r.GET("/config", func(c *gin.Context) {
-		core.ConfigHandler(c, locks)
-	})
-	r.POST("/config/update", func(c *gin.Context) {
-		core.UpdateConfigHandler(c, locks)
-	})
+		// Status and listing endpoints
+		api.GET("/status", func(c *gin.Context) {
+			core.StatusHandler(c, locks)
+		})
+		api.GET("/list", func(c *gin.Context) {
+			core.ListHandler(c, locks)
+		})
+
+		// Configuration endpoints
+		api.GET("/config", func(c *gin.Context) {
+			core.ConfigHandler(c, locks)
+		})
+		api.POST("/config/update", func(c *gin.Context) {
+			core.UpdateConfigHandler(c, locks)
+		})
+	}
 
 	// Swagger UI endpoint
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

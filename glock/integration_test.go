@@ -49,17 +49,20 @@ func NewTestServer(t *testing.T) *TestServer {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// Add routes with proper handler signatures
-	r.POST("/create", func(c *gin.Context) { core.CreateHandler(c, coreServer) })
-	r.POST("/update", func(c *gin.Context) { core.UpdateHandler(c, coreServer) })
-	r.DELETE("/delete/:name", func(c *gin.Context) { core.DeleteHandler(c, coreServer) })
-	r.POST("/acquire", func(c *gin.Context) { core.AcquireHandler(c, coreServer) })
-	r.POST("/refresh", func(c *gin.Context) { core.RefreshHandler(c, coreServer) })
-	r.POST("/verify", func(c *gin.Context) { core.VerifyHandler(c, coreServer) })
-	r.POST("/release", func(c *gin.Context) { core.ReleaseHandler(c, coreServer) })
-	r.POST("/poll", func(c *gin.Context) { core.PollHandler(c, coreServer) })
-	r.GET("/status", func(c *gin.Context) { core.StatusHandler(c, coreServer) })
-	r.GET("/list", func(c *gin.Context) { core.ListHandler(c, coreServer) })
+	// API routes group
+	api := r.Group("/api")
+	{
+		api.POST("/create", func(c *gin.Context) { core.CreateHandler(c, coreServer) })
+		api.POST("/update", func(c *gin.Context) { core.UpdateHandler(c, coreServer) })
+		api.DELETE("/delete/:name", func(c *gin.Context) { core.DeleteHandler(c, coreServer) })
+		api.POST("/acquire", func(c *gin.Context) { core.AcquireHandler(c, coreServer) })
+		api.POST("/refresh", func(c *gin.Context) { core.RefreshHandler(c, coreServer) })
+		api.POST("/verify", func(c *gin.Context) { core.VerifyHandler(c, coreServer) })
+		api.POST("/release", func(c *gin.Context) { core.ReleaseHandler(c, coreServer) })
+		api.POST("/poll", func(c *gin.Context) { core.PollHandler(c, coreServer) })
+		api.GET("/status", func(c *gin.Context) { core.StatusHandler(c, coreServer) })
+		api.GET("/list", func(c *gin.Context) { core.ListHandler(c, coreServer) })
+	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -76,7 +79,7 @@ func NewTestServer(t *testing.T) *TestServer {
 	// Wait for server to be ready
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	for i := 0; i < 50; i++ {
-		resp, err := http.Get(url + "/status")
+		resp, err := http.Get(url + "/api/status")
 		if err == nil {
 			resp.Body.Close()
 			break

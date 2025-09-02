@@ -21,6 +21,7 @@ type Lock struct {
 	Metadata     any           `json:"metadata"`
 	QueueType    QueueBehavior `json:"queue_type" example:"fifo"`
 	QueueTimeout time.Duration `json:"queue_timeout" swaggertype:"string" example:"1m"`
+	Frozen       bool          `json:"frozen" example:"false"`
 	queue        *LockQueue    `json:"-"`
 	mu           sync.Mutex    `json:"-"`
 }

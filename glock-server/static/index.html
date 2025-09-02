@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glock Server Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-title">
+                <h1>Glock Server Dashboard</h1>
+                <a href="/swagger/index.html" target="_blank" class="swagger-link">API Docs</a>
+            </div>
+            <div class="header-controls">
+                <button id="refresh-btn" class="btn btn-primary">Refresh</button>
+                <label class="auto-refresh-toggle">
+                    <input type="checkbox" id="auto-refresh-checkbox">
+                    Auto-refresh (5s)
+                </label>
+                <span id="last-updated" class="last-updated">Last updated: Never</span>
+            </div>
+        </header>
+
+        <div class="controls-section">
+            <div class="control-group">
+                <button id="create-lock-btn" class="btn btn-success create-lock-btn">Create Lock</button>
+                <div class="search-group">
+                    <input type="text" id="search-input" placeholder="Search locks..." class="search-input">
+                    <select id="status-filter" class="filter-select">
+                        <option value="">All Status</option>
+                        <option value="available">Available</option>
+                        <option value="held">Held</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-section">
+            <div class="stat-card">
+                <div class="stat-number" id="total-locks">0</div>
+                <div class="stat-label">Total Locks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="available-locks">0</div>
+                <div class="stat-label">Available</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="held-locks">0</div>
+                <div class="stat-label">Held</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="expired-locks">0</div>
+                <div class="stat-label">Expired</div>
+            </div>
+        </div>
+
+        <div class="locks-section">
+            <div class="section-header">
+                <h2>Locks</h2>
+                <div id="loading-indicator" class="loading-indicator" style="display: none;">
+                    Loading...
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="locks-table" class="locks-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Owner</th>
+                            <th>Status</th>
+                            <th>Time Remaining</th>
+                            <th>TTL</th>
+                            <th>Max TTL</th>
+                            <th>Queue</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="locks-tbody">
+                        <tr>
+                            <td colspan="8" class="no-data">Loading locks...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="create-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Lock</h3>
+                <span class="modal-close">&times;</span>
+            </div>
+            <form id="create-lock-form">
+                <div class="form-group">
+                    <label for="create-name">Lock Name *</label>
+                    <input type="text" id="create-name" name="name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="create-ttl">TTL *</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">Time To Live - How long the lock remains valid before
+                                    expiring</span>
+                            </div>
+                        </div>
+                        <input type="text" id="create-ttl" name="ttl" placeholder="30s" required>
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="create-max-ttl">Max TTL *</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">Maximum Time To Live - The absolute maximum duration the
+                                    lock can exist</span>
+                            </div>
+                        </div>
+                        <input type="text" id="create-max-ttl" name="max_ttl" placeholder="5m" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="create-queue-type">Queue Type</label>
+                        <div class="help-tooltip">
+                            ⓘ
+                            <span class="help-tooltip-text">How waiting requests are ordered when the lock becomes
+                                available</span>
+                        </div>
+                    </div>
+                    <select id="create-queue-type" name="queue_type">
+                        <option value="none">None</option>
+                        <option value="fifo">FIFO</option>
+                        <option value="lifo">LIFO</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="create-queue-timeout">Queue Timeout</label>
+                        <div class="help-tooltip">
+                            ⓘ
+                            <span class="help-tooltip-text">How long requests wait in queue before timing out</span>
+                        </div>
+                    </div>
+                    <input type="text" id="create-queue-timeout" name="queue_timeout" placeholder="1m">
+                </div>
+                <div class="form-group">
+                    <label for="create-metadata">Metadata (JSON)</label>
+                    <textarea id="create-metadata" name="metadata" rows="3"
+                        placeholder='{"description": "My lock"}'></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-success">Create Lock</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="update-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Update Lock</h3>
+                <span class="modal-close">&times;</span>
+            </div>
+            <form id="update-lock-form">
+                <input type="hidden" id="update-lock-name" name="name">
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="update-ttl">TTL *</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">Time To Live - How long the lock remains valid before
+                                    expiring</span>
+                            </div>
+                        </div>
+                        <input type="text" id="update-ttl" name="ttl" required>
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="update-max-ttl">Max TTL *</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">Maximum Time To Live - The absolute maximum duration the
+                                    lock can exist</span>
+                            </div>
+                        </div>
+                        <input type="text" id="update-max-ttl" name="max_ttl" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="update-queue-type">Queue Type</label>
+                        <div class="help-tooltip">
+                            ⓘ
+                            <span class="help-tooltip-text">How waiting requests are ordered when the lock becomes
+                                available</span>
+                        </div>
+                    </div>
+                    <select id="update-queue-type" name="queue_type">
+                        <option value="none">None</option>
+                        <option value="fifo">FIFO</option>
+                        <option value="lifo">LIFO</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="update-queue-timeout">Queue Timeout</label>
+                        <div class="help-tooltip">
+                            ⓘ
+                            <span class="help-tooltip-text">How long requests wait in queue before timing out</span>
+                        </div>
+                    </div>
+                    <input type="text" id="update-queue-timeout" name="queue_timeout">
+                </div>
+                <div class="form-group">
+                    <label for="update-metadata">Metadata (JSON)</label>
+                    <textarea id="update-metadata" name="metadata" rows="3"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Lock</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-confirm">
+            <div class="modal-header">
+                <h3 id="confirm-title">Confirm Action</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                <button type="button" id="confirm-action" class="btn btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alert-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-alert">
+            <div class="modal-header">
+                <h3 id="alert-title">Alert</h3>
+            </div>
+            <div class="modal-body">
+                <p id="alert-message">Message</p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary modal-close">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/locks.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script>
+        // Position tooltips dynamically to avoid modal clipping
+        document.addEventListener('DOMContentLoaded', function () {
+            function positionTooltip(helpIcon) {
+                const tooltip = helpIcon.querySelector('.help-tooltip-text');
+                if (!tooltip) return;
+
+                const rect = helpIcon.getBoundingClientRect();
+
+                // Position tooltip above the icon, centered horizontally
+                tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+                tooltip.style.top = (rect.top - 45) + 'px'; // 45px above the icon
+            }
+
+            // Add event listeners to all help tooltips
+            document.querySelectorAll('.help-tooltip').forEach(function (tooltip) {
+                tooltip.addEventListener('mouseenter', function () {
+                    positionTooltip(tooltip);
+                });
+                tooltip.addEventListener('mouseleave', function () {
+                    // Reset position when mouse leaves
+                    const tooltipText = tooltip.querySelector('.help-tooltip-text');
+                    if (tooltipText) {
+                        tooltipText.style.left = '';
+                        tooltipText.style.top = '';
+                    }
+                });
+            });
+
+            // Reposition tooltips on window resize
+            window.addEventListener('resize', function () {
+                document.querySelectorAll('.help-tooltip:hover').forEach(positionTooltip);
+            });
+        });
+    </script>
+</body>
+
+</html>

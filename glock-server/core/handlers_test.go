@@ -14,15 +14,22 @@ import (
 func setupRouter(g *GlockServer) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.Default()
-	r.POST("/create", func(c *gin.Context) { CreateHandler(c, g) })
-	r.POST("/update", func(c *gin.Context) { UpdateHandler(c, g) })
-	r.DELETE("/delete/:name", func(c *gin.Context) { DeleteHandler(c, g) })
-	r.POST("/acquire", func(c *gin.Context) { AcquireHandler(c, g) })
-	r.POST("/refresh", func(c *gin.Context) { RefreshHandler(c, g) })
-	r.POST("/verify", func(c *gin.Context) { VerifyHandler(c, g) })
-	r.POST("/release", func(c *gin.Context) { ReleaseHandler(c, g) })
-	r.GET("/status", func(c *gin.Context) { StatusHandler(c, g) })
-	r.GET("/list", func(c *gin.Context) { ListHandler(c, g) })
+
+	// API routes group
+	api := r.Group("/api")
+	{
+		api.POST("/create", func(c *gin.Context) { CreateHandler(c, g) })
+		api.POST("/update", func(c *gin.Context) { UpdateHandler(c, g) })
+		api.DELETE("/delete/:name", func(c *gin.Context) { DeleteHandler(c, g) })
+		api.POST("/acquire", func(c *gin.Context) { AcquireHandler(c, g) })
+		api.POST("/refresh", func(c *gin.Context) { RefreshHandler(c, g) })
+		api.POST("/verify", func(c *gin.Context) { VerifyHandler(c, g) })
+		api.POST("/release", func(c *gin.Context) { ReleaseHandler(c, g) })
+		api.POST("/poll", func(c *gin.Context) { PollHandler(c, g) })
+		api.GET("/status", func(c *gin.Context) { StatusHandler(c, g) })
+		api.GET("/list", func(c *gin.Context) { ListHandler(c, g) })
+	}
+
 	return r
 }
 
@@ -38,7 +45,7 @@ func TestHandlers_CreateAcquireRelease(t *testing.T) {
 	// create
 	cr := CreateRequest{Name: "a", TTL: "1s", MaxTTL: "1m"}
 	b, _ := json.Marshal(cr)
-	req := httptest.NewRequest("POST", "/create", bytes.NewBuffer(b))
+	req := httptest.NewRequest("POST", "/api/create", bytes.NewBuffer(b))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -49,7 +56,7 @@ func TestHandlers_CreateAcquireRelease(t *testing.T) {
 	// acquire
 	ar := AcquireRequest{Name: "a", Owner: "me", OwnerID: "11111111-1111-1111-1111-111111111111"}
 	b, _ = json.Marshal(ar)
-	req = httptest.NewRequest("POST", "/acquire", bytes.NewBuffer(b))
+	req = httptest.NewRequest("POST", "/api/acquire", bytes.NewBuffer(b))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -66,7 +73,7 @@ func TestHandlers_CreateAcquireRelease(t *testing.T) {
 	// release
 	rr := ReleaseRequest{Name: "a", OwnerID: "11111111-1111-1111-1111-111111111111", Token: token}
 	b, _ = json.Marshal(rr)
-	req = httptest.NewRequest("POST", "/release", bytes.NewBuffer(b))
+	req = httptest.NewRequest("POST", "/api/release", bytes.NewBuffer(b))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -90,7 +97,7 @@ func TestHandlers_Status(t *testing.T) {
 		cr := CreateRequest{Name: name, TTL: "1s", MaxTTL: "1m"}
 		b, _ := json.Marshal(cr)
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest("POST", "/create", bytes.NewBuffer(b))
+		req := httptest.NewRequest("POST", "/api/create", bytes.NewBuffer(b))
 		req.Header.Set("Content-Type", "application/json")
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -100,7 +107,7 @@ func TestHandlers_Status(t *testing.T) {
 
 	// Check list
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/list", nil)
+	req := httptest.NewRequest("GET", "/api/list", nil)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list handler failed: %d %s", w.Code, w.Body.String())

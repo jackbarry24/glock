@@ -34,22 +34,24 @@ cleanup_interval: 30s
 ```
 
 #### Runtime Configuration
-- GET `/config` - Get current configuration
-- POST `/config/update` - Update configuration at runtime
+- GET `/api/config` - Get current configuration
+- POST `/api/config/update` - Update configuration at runtime
 
 ### Endpoints
-- POST `/create` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
-- POST `/update` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
+- POST `/api/create` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
+- POST `/api/update` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
 
 **Duration Format**: All duration fields accept Go duration strings (e.g., "30s", "5m", "1h", "300ms")
-- DELETE `/delete/:name`
-- POST `/acquire` { name, owner, owner_id } → Returns lock or queue info
-- POST `/refresh` { name, owner_id, token } → Extend lock expiration
-- POST `/verify` { name, owner_id, token } → Check ownership
-- POST `/release` { name, owner_id, token }  → Release
-- POST `/poll` { name, request_id, owner_id } → Check queue status
-- GET `/status` → See all locks and ownership
-- GET `/list` → See all locks
+- DELETE `/api/delete/:name`
+- POST `/api/acquire` { name, owner, owner_id } → Returns lock or queue info
+- POST `/api/refresh` { name, owner_id, token } → Extend lock expiration
+- POST `/api/verify` { name, owner_id, token } → Check ownership
+- POST `/api/release` { name, owner_id, token }  → Release
+- POST `/api/poll` { name, request_id, owner_id } → Check queue status
+- POST `/api/freeze/:name` → Freeze a lock to prevent acquisition/refresh
+- POST `/api/unfreeze/:name` → Unfreeze a lock to allow acquisition/refresh
+- GET `/api/status` → See all locks and ownership
+- GET `/api/list` → See all locks
 
 ### Queue Functionality
 
@@ -63,7 +65,7 @@ When a lock is unavailable:
 
 Example create request:
 ```json
-POST /create
+POST /api/create
 {
   "name": "my-lock",
   "ttl": "30s",
@@ -75,7 +77,7 @@ POST /create
 
 Clients can poll their queue status using:
 ```json
-POST /poll
+POST /api/poll
 {
   "name": "lock-name",
   "request_id": "returned-from-acquire",

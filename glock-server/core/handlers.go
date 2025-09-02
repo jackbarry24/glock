@@ -474,3 +474,77 @@ func UpdateConfigHandler(c *gin.Context, g *GlockServer) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "configuration updated", "config": g.Config})
 }
+
+// FreezeLockHandler handles the /freeze route
+// @Summary Freeze a lock
+// @Description Freeze a lock to prevent acquisition and refresh
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param name path string true "Lock name"
+// @Success 200 {object} map[string]bool
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /freeze/{name} [post]
+func FreezeLockHandler(c *gin.Context, g *GlockServer) {
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	lockVal, exists := g.Locks.Load(name)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
+		return
+	}
+
+	lock := lockVal.(*Lock)
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	if lock.Frozen {
+		c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock was already frozen"})
+		return
+	}
+
+	lock.Frozen = true
+	c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock frozen successfully"})
+}
+
+// UnfreezeLockHandler handles the /unfreeze route
+// @Summary Unfreeze a lock
+// @Description Unfreeze a lock to allow acquisition and refresh
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param name path string true "Lock name"
+// @Success 200 {object} map[string]bool
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /unfreeze/{name} [post]
+func UnfreezeLockHandler(c *gin.Context, g *GlockServer) {
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	lockVal, exists := g.Locks.Load(name)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
+		return
+	}
+
+	lock := lockVal.(*Lock)
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	if !lock.Frozen {
+		c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock was already unfrozen"})
+		return
+	}
+
+	lock.Frozen = false
+	c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock unfrozen successfully"})
+}

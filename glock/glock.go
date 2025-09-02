@@ -19,6 +19,7 @@ type Lock struct {
 	OwnerID     string        `json:"owner_id"`
 	Token       uint          `json:"token"`
 	TTL         time.Duration `json:"ttl"`
+	Frozen      bool          `json:"frozen"`
 	serverURL   string        `json:"-"`
 	heartbeatCh chan struct{} `json:"-"`
 }
@@ -136,7 +137,7 @@ func (g *Glock) Acquire(lockName, owner string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := g.getHTTPClient().Post(g.ServerURL+"/acquire", "application/json", bytes.NewBuffer(body))
+	resp, err := g.getHTTPClient().Post(g.ServerURL+"/api/acquire", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +178,7 @@ func (g *Glock) CreateLock(name string, ttl, maxTTL string, queueType QueueBehav
 		return err
 	}
 
-	resp, err := http.Post(g.ServerURL+"/create", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(g.ServerURL+"/api/create", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -206,7 +207,7 @@ func (g *Glock) UpdateLock(name string, ttl, maxTTL string, queueType QueueBehav
 		return err
 	}
 
-	resp, err := http.Post(g.ServerURL+"/update", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(g.ServerURL+"/api/update", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -235,7 +236,7 @@ func (g *Glock) CreateLockWithMetadata(name string, ttl, maxTTL string, queueTyp
 		return err
 	}
 
-	resp, err := http.Post(g.ServerURL+"/create", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(g.ServerURL+"/api/create", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -260,7 +261,7 @@ func (g *Glock) AcquireQueued(lockName, owner string) (*Lock, *QueueResponse, er
 		return nil, nil, err
 	}
 
-	resp, err := http.Post(g.ServerURL+"/acquire", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(g.ServerURL+"/api/acquire", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -300,7 +301,7 @@ func (g *Glock) AcquireQueued(lockName, owner string) (*Lock, *QueueResponse, er
 
 // DeleteLock deletes an existing lock
 func (g *Glock) DeleteLock(name string) error {
-	req, err := http.NewRequest("DELETE", g.ServerURL+"/delete/"+name, nil)
+	req, err := http.NewRequest("DELETE", g.ServerURL+"/api/delete/"+name, nil)
 	if err != nil {
 		return err
 	}
@@ -320,7 +321,7 @@ func (g *Glock) DeleteLock(name string) error {
 
 // ListLocks returns a list of all lock names on the server
 func (g *Glock) ListLocks() ([]string, error) {
-	resp, err := http.Get(g.ServerURL + "/list")
+	resp, err := http.Get(g.ServerURL + "/api/list")
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +345,7 @@ func (g *Glock) ListLocks() ([]string, error) {
 
 // GetServerStatus returns the current server status
 func (g *Glock) GetServerStatus() (map[string]interface{}, error) {
-	resp, err := http.Get(g.ServerURL + "/status")
+	resp, err := http.Get(g.ServerURL + "/api/status")
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +360,7 @@ func (g *Glock) GetServerStatus() (map[string]interface{}, error) {
 
 // HealthCheck verifies server connectivity and returns server information
 func (g *Glock) HealthCheck() error {
-	resp, err := http.Get(g.ServerURL + "/status")
+	resp, err := http.Get(g.ServerURL + "/api/status")
 	if err != nil {
 		return fmt.Errorf("server health check failed: %v", err)
 	}
@@ -385,7 +386,7 @@ func (g *Glock) PollQueue(lockName, requestID string) (*PollResponse, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post(g.ServerURL+"/poll", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(g.ServerURL+"/api/poll", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -425,12 +426,17 @@ func (l *Lock) StartHeartbeat() {
 					fmt.Printf("Heartbeat marshal error for lock %s: %v\n", l.Name, err)
 					continue
 				}
-				resp, err := http.Post(l.serverURL+"/refresh", "application/json", bytes.NewBuffer(body))
+				resp, err := http.Post(l.serverURL+"/api/refresh", "application/json", bytes.NewBuffer(body))
 				if err != nil {
 					fmt.Printf("Heartbeat error for lock %s: %v\n", l.Name, err)
 					continue
 				}
 				// do not defer in loop to avoid accumulating defers
+				if resp.StatusCode != http.StatusOK {
+					fmt.Printf("Heartbeat error for lock %s: server returned status %d\n", l.Name, resp.StatusCode)
+					_ = resp.Body.Close()
+					continue
+				}
 				refreshResp := RefreshResponse{}
 				if err := json.NewDecoder(resp.Body).Decode(&refreshResp); err != nil {
 					fmt.Printf("Heartbeat decode error for lock %s: %v\n", l.Name, err)
@@ -457,11 +463,23 @@ func (l *Lock) VerifyOwnership() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	resp, err := http.Post(l.serverURL+"/verify", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(l.serverURL+"/api/verify", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return false, fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return false, fmt.Errorf("server error: %s", errorMsg)
+		}
+		return false, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
 	verifyResp := VerifyResponse{}
 	if err := json.NewDecoder(resp.Body).Decode(&verifyResp); err != nil {
 		return false, err
@@ -480,11 +498,23 @@ func (l *Lock) Refresh() error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(l.serverURL+"/refresh", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(l.serverURL+"/api/refresh", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return fmt.Errorf("server error: %s", errorMsg)
+		}
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
 	refreshResp := RefreshResponse{}
 	if err := json.NewDecoder(resp.Body).Decode(&refreshResp); err != nil {
 		return err
@@ -515,11 +545,23 @@ func (l *Lock) Release() error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(l.serverURL+"/release", "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(l.serverURL+"/api/release", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return fmt.Errorf("server error: %s", errorMsg)
+		}
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
 	releaseResp := ReleaseResponse{}
 	if err := json.NewDecoder(resp.Body).Decode(&releaseResp); err != nil {
 		return err
@@ -546,6 +588,62 @@ func (l *Lock) TimeUntilExpiry() time.Duration {
 // GetMetadata returns the lock's metadata (if any)
 func (l *Lock) GetMetadata() any {
 	return nil // Metadata not stored locally; would need server call
+}
+
+// Freeze freezes the lock to prevent acquisition and refresh
+func (l *Lock) Freeze() error {
+	resp, err := http.Post(l.serverURL+"/api/freeze/"+l.Name, "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return fmt.Errorf("server error: %s", errorMsg)
+		}
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+
+	fmt.Printf("Lock %s frozen\n", l.Name)
+	return nil
+}
+
+// Unfreeze unfreezes the lock to allow acquisition and refresh
+func (l *Lock) Unfreeze() error {
+	resp, err := http.Post(l.serverURL+"/api/unfreeze/"+l.Name, "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err != nil {
+			return fmt.Errorf("server returned status %d", resp.StatusCode)
+		}
+		if errorMsg, exists := errorResp["error"]; exists {
+			return fmt.Errorf("server error: %s", errorMsg)
+		}
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+
+	fmt.Printf("Lock %s unfrozen\n", l.Name)
+	return nil
 }
 
 // UpdateMetadata updates the lock's metadata on the server

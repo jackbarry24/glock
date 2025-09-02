@@ -108,6 +108,7 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		Metadata:     req.Metadata,
 		QueueType:    queueType,
 		QueueTimeout: queueTimeoutDuration,
+		Frozen:       false,
 		queue:        NewLockQueue(),
 	}
 
@@ -240,6 +241,11 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
+	// Check if lock is frozen
+	if lock.Frozen {
+		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be acquired", req.Name)
+	}
+
 	if lock.IsAvailable() {
 		// Lock is available, acquire it immediately
 		lock.Owner = req.Owner
@@ -362,6 +368,12 @@ func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 	lock := lockVal.(*Lock)
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
+
+	// Check if lock is frozen
+	if lock.Frozen {
+		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be refreshed", req.Name)
+	}
+
 	if lock.OwnerID != req.OwnerID {
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
