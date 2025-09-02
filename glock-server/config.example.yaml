@@ -1,0 +1,15 @@
+# Example configuration file for glock-server
+# This file demonstrates all available configuration options
+
+# Server configuration
+port: 8080
+host: ""  # Leave empty to bind to all interfaces
+
+# Lock configuration
+capacity: 1000
+default_ttl: 30s
+default_max_ttl: 5m
+default_queue_timeout: 5m
+
+# Cleanup configuration (how often to clean up expired locks)
+cleanup_interval: 30s

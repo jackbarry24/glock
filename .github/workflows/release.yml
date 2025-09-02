@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Semver tag (e.g., v0.1.0)'
+        required: true
+      prerelease:
+        description: 'Mark as prerelease'
+        type: boolean
+        required: false
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.x'
+      - name: Build client
+        working-directory: glock
+        run: go build ./...
+      - name: Test client
+        working-directory: glock
+        run: go test -v ./...
+      - name: Build server
+        working-directory: glock-server
+        run: go build ./...
+      - name: Test server
+        working-directory: glock-server
+        run: go test -v ./...
+      - name: Generate OpenAPI spec
+        working-directory: glock-server
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@latest
+          swag init -g cmd/main.go -o docs/
+      - name: Generate client
+        run: |
+          npm install -g @openapitools/openapi-generator-cli
+          openapi-generator-cli generate \
+            -i glock-server/docs/swagger.json \
+            -g go \
+            -o glock-generated \
+            --additional-properties=packageName=glock,withGoMod=false,enumClassPrefix=true
+
+  tag-and-release:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git tag ${{ inputs.tag }}
+          git push origin ${{ inputs.tag }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+
+
+

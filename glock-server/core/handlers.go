@@ -1,0 +1,476 @@
+package core
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// CreateHandler handles the /create route.
+// @Summary Create a new lock
+// @Description Create a new distributed lock with optional queue configuration
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body CreateRequest true "Lock creation parameters"
+// @Success 200 {object} CreateResponse
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /create [post]
+func CreateHandler(c *gin.Context, g *GlockServer) {
+	var req CreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	// Parse TTL
+	ttlDuration, err := time.ParseDuration(req.TTL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid ttl format: %v", err)})
+		return
+	}
+	if ttlDuration <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ttl must be greater than zero"})
+		return
+	}
+
+	// Parse MaxTTL
+	maxTTLDuration, err := time.ParseDuration(req.MaxTTL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid max_ttl format: %v", err)})
+		return
+	}
+	if maxTTLDuration <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "max_ttl must be greater than zero"})
+		return
+	}
+
+	if maxTTLDuration < ttlDuration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "max_ttl must be greater than or equal to ttl"})
+		return
+	}
+
+	// Parse QueueTimeout if provided
+	var queueTimeoutDuration time.Duration
+	if req.QueueTimeout != "" {
+		queueTimeoutDuration, err = time.ParseDuration(req.QueueTimeout)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid queue_timeout format: %v", err)})
+			return
+		}
+		if queueTimeoutDuration <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_timeout must be greater than zero"})
+			return
+		}
+	}
+
+	// Validate queue parameters
+	if req.QueueType != "" {
+		switch req.QueueType {
+		case QueueNone, QueueFIFO, QueueLIFO:
+			// Valid queue type
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
+			return
+		}
+	}
+
+	lock, code, err := g.CreateLock(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"lock": lock})
+}
+
+// UpdateHandler handles the /update route.
+// @Summary Update lock configuration
+// @Description Update an existing lock's TTL, MaxTTL, and queue configuration
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body UpdateRequest true "Lock update parameters"
+// @Success 200 {object} UpdateResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /update [post]
+func UpdateHandler(c *gin.Context, g *GlockServer) {
+	var req UpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	// Parse TTL if provided
+	if req.TTL != "" {
+		_, err := time.ParseDuration(req.TTL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid ttl format: %v", err)})
+			return
+		}
+	}
+
+	// Parse MaxTTL if provided
+	if req.MaxTTL != "" {
+		_, err := time.ParseDuration(req.MaxTTL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid max_ttl format: %v", err)})
+			return
+		}
+	}
+
+	// Parse QueueTimeout if provided
+	if req.QueueTimeout != "" {
+		_, err := time.ParseDuration(req.QueueTimeout)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid queue_timeout format: %v", err)})
+			return
+		}
+	}
+
+	// Validate queue parameters
+	if req.QueueType != "" {
+		switch req.QueueType {
+		case QueueNone, QueueFIFO, QueueLIFO:
+			// Valid queue type
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
+			return
+		}
+	}
+
+	lock, code, err := g.UpdateLock(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"lock": lock})
+}
+
+// DeleteHandler handles the /delete/:name route.
+// @Summary Delete a lock
+// @Description Delete an existing lock by name
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param name path string true "Lock name"
+// @Success 200 {object} map[string]bool
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /delete/{name} [delete]
+func DeleteHandler(c *gin.Context, g *GlockServer) {
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	success, code, err := g.DeleteLock(name)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"success": success})
+}
+
+// AcquireHandler handles the /acquire route.
+// @Summary Acquire a lock
+// @Description Attempt to acquire a lock, either immediately or queue the request
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body AcquireRequest true "Lock acquisition parameters"
+// @Success 200 {object} AcquireResponse
+// @Success 202 {object} QueueResponse
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /acquire [post]
+func AcquireHandler(c *gin.Context, g *GlockServer) {
+	var req AcquireRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if !IsValidOwner(req.OwnerID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
+		return
+	}
+
+	result, code, err := g.AcquireLock(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if result is a queue response or lock
+	switch response := result.(type) {
+	case *Lock:
+		c.JSON(code, gin.H{"lock": response})
+	case *QueueResponse:
+		c.JSON(code, gin.H{"queue": response})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected response type"})
+	}
+}
+
+// RefreshHandler handles the /refresh route.
+// @Summary Refresh a lock
+// @Description Extend the TTL of an acquired lock
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body RefreshRequest true "Lock refresh parameters"
+// @Success 200 {object} RefreshResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /refresh [post]
+func RefreshHandler(c *gin.Context, g *GlockServer) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if !IsValidOwner(req.OwnerID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
+		return
+	}
+
+	if req.Token == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for refresh requests"})
+	}
+
+	lock, code, err := g.RefreshLock(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"lock": lock})
+}
+
+// VerifyHandler handles the /verify route.
+// @Summary Verify lock ownership
+// @Description Verify that a client still owns a lock
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body VerifyRequest true "Lock verification parameters"
+// @Success 200 {object} VerifyResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /verify [post]
+func VerifyHandler(c *gin.Context, g *GlockServer) {
+	var req VerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if req.Token == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for verify requests"})
+	}
+
+	ok, code, err := g.VerifyLock(&req)
+	if err != nil || !ok {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"success": ok})
+}
+
+// ReleaseHandler handles the /release route.
+// @Summary Release a lock
+// @Description Release ownership of a lock
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param request body ReleaseRequest true "Lock release parameters"
+// @Success 200 {object} ReleaseResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /release [post]
+func ReleaseHandler(c *gin.Context, g *GlockServer) {
+	var req ReleaseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if !IsValidOwner(req.OwnerID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
+		return
+	}
+
+	if req.Token == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for release requests"})
+	}
+
+	success, code, err := g.ReleaseLock(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, gin.H{"success": success})
+}
+
+// PollHandler handles the /poll route for checking queue status
+// @Summary Poll queue status
+// @Description Check the status of a queued lock acquisition request
+// @Tags queue
+// @Accept json
+// @Produce json
+// @Param request body PollRequest true "Queue poll parameters"
+// @Success 200 {object} PollResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /poll [post]
+func PollHandler(c *gin.Context, g *GlockServer) {
+	var req PollRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	if req.RequestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request_id must not be empty"})
+		return
+	}
+
+	if !IsValidOwner(req.OwnerID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
+		return
+	}
+
+	resp, code, err := g.PollQueue(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, resp)
+}
+
+// StatusHandler handles the /status route.
+// @Summary Get server status
+// @Description Get the current status of all locks on the server
+// @Tags status
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string][]Lock
+// @Router /status [get]
+func StatusHandler(c *gin.Context, g *GlockServer) {
+	locks := make([]*Lock, 0)
+	g.Locks.Range(func(key, value any) bool {
+		if lock, ok := value.(*Lock); ok {
+			locks = append(locks, lock)
+		}
+		return true
+	})
+	c.JSON(http.StatusOK, gin.H{"locks": locks})
+}
+
+// ListHandler handles the /list route.
+// @Summary List all locks
+// @Description Get a list of all lock names on the server
+// @Tags status
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string][]string
+// @Router /list [get]
+func ListHandler(c *gin.Context, g *GlockServer) {
+	locks := make([]*string, 0)
+	g.Locks.Range(func(key, value any) bool {
+		if lock, ok := value.(*Lock); ok {
+			locks = append(locks, &lock.Name)
+		}
+		return true
+	})
+	c.JSON(http.StatusOK, gin.H{"locks": locks})
+}
+
+// ConfigHandler handles the /config route to get current configuration
+// @Summary Get server configuration
+// @Description Get the current server configuration
+// @Tags config
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]Config
+// @Router /config [get]
+func ConfigHandler(c *gin.Context, g *GlockServer) {
+	c.JSON(http.StatusOK, gin.H{"config": g.Config})
+}
+
+// UpdateConfigHandler handles the /config/update route for runtime configuration updates
+// @Summary Update server configuration
+// @Description Update the server configuration at runtime
+// @Tags config
+// @Accept json
+// @Produce json
+// @Param request body Config true "New configuration"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /config/update [post]
+func UpdateConfigHandler(c *gin.Context, g *GlockServer) {
+	var req Config
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate the new configuration
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update configuration (this is a runtime update, so we need to be careful)
+	// For now, we'll update most fields but some might require restart
+	g.Config.Capacity = req.Capacity
+	g.Config.DefaultTTL = req.DefaultTTL
+	g.Config.DefaultMaxTTL = req.DefaultMaxTTL
+	g.Config.DefaultQueueTimeout = req.DefaultQueueTimeout
+	g.Config.CleanupInterval = req.CleanupInterval
+
+	c.JSON(http.StatusOK, gin.H{"message": "configuration updated", "config": g.Config})
+}

@@ -1,0 +1,957 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "A distributed lock server with queuing support",
+        "title": "Glock Server API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.swagger.io/support",
+            "email": "support@swagger.io"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/acquire": {
+            "post": {
+                "description": "Attempt to acquire a lock, either immediately or queue the request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Acquire a lock",
+                "parameters": [
+                    {
+                        "description": "Lock acquisition parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.AcquireRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.AcquireResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/core.QueueResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/config": {
+            "get": {
+                "description": "Get the current server configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get server configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/core.Config"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/config/update": {
+            "post": {
+                "description": "Update the server configuration at runtime",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Update server configuration",
+                "parameters": [
+                    {
+                        "description": "New configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.Config"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/create": {
+            "post": {
+                "description": "Create a new distributed lock with optional queue configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Create a new lock",
+                "parameters": [
+                    {
+                        "description": "Lock creation parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.CreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/delete/{name}": {
+            "delete": {
+                "description": "Delete an existing lock by name",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Delete a lock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lock name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/list": {
+            "get": {
+                "description": "Get a list of all lock names on the server",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "status"
+                ],
+                "summary": "List all locks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/poll": {
+            "post": {
+                "description": "Check the status of a queued lock acquisition request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "queue"
+                ],
+                "summary": "Poll queue status",
+                "parameters": [
+                    {
+                        "description": "Queue poll parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.PollRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.PollResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/refresh": {
+            "post": {
+                "description": "Extend the TTL of an acquired lock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Refresh a lock",
+                "parameters": [
+                    {
+                        "description": "Lock refresh parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.RefreshRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.RefreshResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/release": {
+            "post": {
+                "description": "Release ownership of a lock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Release a lock",
+                "parameters": [
+                    {
+                        "description": "Lock release parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.ReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.ReleaseResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "Get the current status of all locks on the server",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "status"
+                ],
+                "summary": "Get server status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/core.Lock"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/update": {
+            "post": {
+                "description": "Update an existing lock's TTL, MaxTTL, and queue configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Update lock configuration",
+                "parameters": [
+                    {
+                        "description": "Lock update parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.UpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/verify": {
+            "post": {
+                "description": "Verify that a client still owns a lock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Verify lock ownership",
+                "parameters": [
+                    {
+                        "description": "Lock verification parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.VerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.VerifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "core.AcquireRequest": {
+            "description": "AcquireRequest represents a request to acquire a lock",
+            "type": "object",
+            "required": [
+                "name",
+                "owner",
+                "owner_id"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "my-lock"
+                },
+                "owner": {
+                    "type": "string",
+                    "example": "client-app"
+                },
+                "owner_id": {
+                    "type": "string",
+                    "example": "uuid-123"
+                }
+            }
+        },
+        "core.AcquireResponse": {
+            "description": "AcquireResponse represents the response from acquiring a lock",
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "$ref": "#/definitions/core.Lock"
+                }
+            }
+        },
+        "core.Config": {
+            "description": "Config holds all configuration for the glock server",
+            "type": "object",
+            "properties": {
+                "capacity": {
+                    "description": "Lock configuration",
+                    "type": "integer",
+                    "example": 1000
+                },
+                "cleanup_interval": {
+                    "description": "Cleanup configuration",
+                    "type": "string",
+                    "example": "30s"
+                },
+                "default_max_ttl": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "default_queue_timeout": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "default_ttl": {
+                    "type": "string",
+                    "example": "30s"
+                },
+                "host": {
+                    "type": "string",
+                    "example": "localhost"
+                },
+                "port": {
+                    "description": "Server configuration",
+                    "type": "integer",
+                    "example": 8080
+                }
+            }
+        },
+        "core.CreateRequest": {
+            "description": "CreateRequest represents a request to create a new lock",
+            "type": "object",
+            "required": [
+                "max_ttl",
+                "name",
+                "ttl"
+            ],
+            "properties": {
+                "max_ttl": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "metadata": {},
+                "name": {
+                    "type": "string",
+                    "example": "my-lock"
+                },
+                "queue_timeout": {
+                    "type": "string",
+                    "example": "1m"
+                },
+                "queue_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/core.QueueBehavior"
+                        }
+                    ],
+                    "example": "fifo"
+                },
+                "ttl": {
+                    "type": "string",
+                    "example": "30s"
+                }
+            }
+        },
+        "core.CreateResponse": {
+            "description": "CreateResponse represents the response from creating a lock",
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "$ref": "#/definitions/core.Lock"
+                }
+            }
+        },
+        "core.Lock": {
+            "description": "Lock represents a distributed lock with metadata and timing information",
+            "type": "object",
+            "properties": {
+                "acquired_at": {
+                    "type": "string"
+                },
+                "available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "last_refresh": {
+                    "type": "string"
+                },
+                "max_ttl": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "metadata": {},
+                "name": {
+                    "type": "string",
+                    "example": "my-lock"
+                },
+                "owner": {
+                    "type": "string",
+                    "example": "client-app"
+                },
+                "owner_id": {
+                    "type": "string",
+                    "example": "uuid-123"
+                },
+                "queue_timeout": {
+                    "type": "string",
+                    "example": "1m"
+                },
+                "queue_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/core.QueueBehavior"
+                        }
+                    ],
+                    "example": "fifo"
+                },
+                "token": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "ttl": {
+                    "type": "string",
+                    "example": "30s"
+                }
+            }
+        },
+        "core.PollRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "owner_id",
+                "request_id"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "core.PollResponse": {
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "$ref": "#/definitions/core.Lock"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "\"waiting\", \"ready\", \"expired\", \"not_found\"",
+                    "type": "string"
+                }
+            }
+        },
+        "core.QueueBehavior": {
+            "description": "QueueBehavior defines how lock queuing works",
+            "type": "string",
+            "enum": [
+                "none",
+                "fifo",
+                "lifo"
+            ],
+            "x-enum-varnames": [
+                "QueueNone",
+                "QueueFIFO",
+                "QueueLIFO"
+            ]
+        },
+        "core.QueueResponse": {
+            "type": "object",
+            "properties": {
+                "position": {
+                    "type": "integer"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "core.RefreshRequest": {
+            "description": "RefreshRequest represents a request to refresh a lock",
+            "type": "object",
+            "required": [
+                "name",
+                "owner_id",
+                "token"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "my-lock"
+                },
+                "owner_id": {
+                    "type": "string",
+                    "example": "uuid-123"
+                },
+                "token": {
+                    "type": "integer",
+                    "example": 12345
+                }
+            }
+        },
+        "core.RefreshResponse": {
+            "description": "RefreshResponse represents the response from refreshing a lock",
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "$ref": "#/definitions/core.Lock"
+                }
+            }
+        },
+        "core.ReleaseRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "owner_id",
+                "token"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "integer"
+                }
+            }
+        },
+        "core.ReleaseResponse": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "core.UpdateRequest": {
+            "type": "object",
+            "required": [
+                "max_ttl",
+                "name",
+                "ttl"
+            ],
+            "properties": {
+                "max_ttl": {
+                    "type": "string"
+                },
+                "metadata": {},
+                "name": {
+                    "type": "string"
+                },
+                "queue_timeout": {
+                    "type": "string"
+                },
+                "queue_type": {
+                    "$ref": "#/definitions/core.QueueBehavior"
+                },
+                "ttl": {
+                    "type": "string"
+                }
+            }
+        },
+        "core.UpdateResponse": {
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "$ref": "#/definitions/core.Lock"
+                }
+            }
+        },
+        "core.VerifyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "owner_id",
+                "token"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "integer"
+                }
+            }
+        },
+        "core.VerifyResponse": {
+            "type": "object",
+            "required": [
+                "success"
+            ],
+            "properties": {
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        }
+    },
+    "externalDocs": {
+        "description": "OpenAPI",
+        "url": "https://swagger.io/resources/open-api/"
+    }
+}

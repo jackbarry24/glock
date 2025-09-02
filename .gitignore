@@ -1,0 +1,51 @@
+# Go specific ignores
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+/bin/
+/dist/
+
+# Go workspace file
+go.work
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Docker specific ignores
+.docker/
+docker-compose.override.yml
+*.env
+.env
+.env.*
+!.env.example
+
+# Binary builds
+build/
+
+# Debug files
+debug/
+
+# Test cache
+*.test
+coverage.txt
+coverage.html
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Dependencies
+/vendor/
