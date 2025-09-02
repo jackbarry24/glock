@@ -506,6 +506,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/remove": {
+            "post": {
+                "description": "Remove a queued lock acquisition request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "queue"
+                ],
+                "summary": "Remove a request from queue",
+                "parameters": [
+                    {
+                        "description": "Queue removal parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.PollRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/status": {
             "get": {
                 "description": "Get the current status of all locks on the server",
@@ -723,6 +778,10 @@ const docTemplate = `{
                 "owner_id": {
                     "type": "string",
                     "example": "uuid-123"
+                },
+                "queue_request": {
+                    "description": "nil = true (default), false = don't queue",
+                    "type": "boolean"
                 }
             }
         },

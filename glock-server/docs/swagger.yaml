@@ -12,6 +12,9 @@ definitions:
       owner_id:
         example: uuid-123
         type: string
+      queue_request:
+        description: nil = true (default), false = don't queue
+        type: boolean
     required:
     - name
     - owner
@@ -576,6 +579,42 @@ paths:
       summary: Release a lock
       tags:
       - locks
+  /remove:
+    post:
+      consumes:
+      - application/json
+      description: Remove a queued lock acquisition request
+      parameters:
+      - description: Queue removal parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/core.PollRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Remove a request from queue
+      tags:
+      - queue
   /status:
     get:
       consumes:
