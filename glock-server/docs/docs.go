@@ -9,16 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
-        "license": {
-            "name": "MIT",
-            "url": "https://opensource.org/licenses/MIT"
-        },
+        "contact": {},
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
@@ -219,6 +210,59 @@ const docTemplate = `{
                     "locks"
                 ],
                 "summary": "Delete a lock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lock name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/freeze/{name}": {
+            "post": {
+                "description": "Freeze a lock to prevent acquisition and refresh",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Freeze a lock",
                 "parameters": [
                     {
                         "type": "string",
@@ -491,6 +535,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/unfreeze/{name}": {
+            "post": {
+                "description": "Unfreeze a lock to allow acquisition and refresh",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "locks"
+                ],
+                "summary": "Unfreeze a lock",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lock name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/update": {
             "post": {
                 "description": "Update an existing lock's TTL, MaxTTL, and queue configuration",
@@ -731,6 +828,10 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "frozen": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "last_refresh": {
                     "type": "string"
                 },
@@ -955,10 +1056,6 @@ const docTemplate = `{
                 }
             }
         }
-    },
-    "externalDocs": {
-        "description": "OpenAPI",
-        "url": "https://swagger.io/resources/open-api/"
     }
 }`
 
@@ -969,7 +1066,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Glock Server API",
-	Description:      "A distributed lock server with queuing support",
+	Description:      "In-memory lock queue",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
