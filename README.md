@@ -1,4 +1,4 @@
-## Glock (gee - lock)
+## GLock (gee - lock)
 ### In-memory lock queue
 
 This repo contains:
