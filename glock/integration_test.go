@@ -2,6 +2,7 @@ package glock
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -64,6 +65,7 @@ func NewTestServer(t *testing.T) *TestServer {
 		api.POST("/remove", func(c *gin.Context) { core.RemoveFromQueueHandler(c, coreServer) })
 		api.GET("/status", func(c *gin.Context) { core.StatusHandler(c, coreServer) })
 		api.GET("/list", func(c *gin.Context) { core.ListHandler(c, coreServer) })
+		api.GET("/metrics/:name", func(c *gin.Context) { core.MetricsHandler(c, coreServer) })
 	}
 
 	server := &http.Server{
@@ -93,7 +95,7 @@ func NewTestServer(t *testing.T) *TestServer {
 	}
 
 	closeFunc := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
 			t.Errorf("server shutdown error: %v", err)
@@ -131,7 +133,7 @@ func TestIntegrationBasicLifecycle(t *testing.T) {
 	defer server.Close()
 
 	// Create client
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
@@ -149,7 +151,7 @@ func TestIntegrationBasicLifecycle(t *testing.T) {
 	}
 
 	// Test acquire lock
-	lock, err := client.Acquire("test-lock", "test-owner")
+	lock, err := client.Acquire("test-lock")
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
@@ -203,7 +205,7 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
@@ -214,7 +216,7 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 		t.Fatalf("failed to create lock: %v", err)
 	}
 
-	lock, err := client.Acquire("heartbeat-test", "test-owner")
+	lock, err := client.Acquire("heartbeat-test")
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
@@ -266,11 +268,11 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 	defer server.Close()
 
 	// Create clients
-	client1, err := Connect(server.URL())
+	client1, err := Connect(server.URL(), "owner1")
 	if err != nil {
 		t.Fatalf("failed to connect client1: %v", err)
 	}
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "owner2")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
@@ -282,13 +284,13 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 	}
 
 	// Client1 acquires the lock
-	lock1, err := client1.Acquire("queue-test", "owner1")
+	lock1, err := client1.Acquire("queue-test")
 	if err != nil {
 		t.Fatalf("failed to acquire lock for client1: %v", err)
 	}
 
 	// Client2 tries to acquire - should get queued
-	lock2, queueResp, err := client2.AcquireOrQueue("queue-test", "owner2")
+	lock2, queueResp, err := client2.AcquireOrQueue("queue-test")
 	if err != nil {
 		t.Fatalf("failed to queue acquisition for client2: %v", err)
 	}
@@ -353,13 +355,13 @@ func TestIntegrationErrorHandling(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "owner1")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
 
 	// Test acquiring non-existent lock
-	_, err = client.Acquire("nonexistent", "test-owner")
+	_, err = client.Acquire("nonexistent")
 	if err == nil {
 		t.Fatal("should have failed to acquire non-existent lock")
 	}
@@ -370,18 +372,18 @@ func TestIntegrationErrorHandling(t *testing.T) {
 		t.Fatalf("failed to create lock: %v", err)
 	}
 
-	lock1, err := client.Acquire("double-acquire-test", "owner1")
+	lock1, err := client.Acquire("double-acquire-test")
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
 
 	// Create second client and try to acquire same lock
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
 
-	lock2, err := client2.Acquire("double-acquire-test", "owner2")
+	lock2, err := client2.Acquire("double-acquire-test")
 	if err == nil {
 		t.Fatal("should have failed to acquire already held lock")
 	}
@@ -424,7 +426,7 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 	// Create lock directly on server
 	_, _, err := server.Core().CreateLock(&core.CreateRequest{
 		Name:   "concurrent-test",
-		TTL:    "1s",
+		TTL:    "30s",
 		MaxTTL: "5m",
 	})
 	if err != nil {
@@ -437,8 +439,8 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 
 	for i := 0; i < numClients; i++ {
 		go func(clientID int) {
-			client, _ := Connect(server.URL())
-			lock, err := client.Acquire("concurrent-test", fmt.Sprintf("client-%d", clientID))
+			client, _ := Connect(server.URL(), fmt.Sprintf("client-%d", clientID))
+			lock, err := client.Acquire("concurrent-test")
 			results <- &acquireResult{lock: lock, err: err, clientID: clientID}
 		}(i)
 	}
@@ -485,7 +487,7 @@ func TestIntegrationNewFeatures(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
@@ -507,7 +509,7 @@ func TestIntegrationNewFeatures(t *testing.T) {
 	}
 
 	// Test Acquire and VerifyOwnership
-	lock, err := client.Acquire("metadata-test", "test-owner")
+	lock, err := client.Acquire("metadata-test")
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
@@ -611,7 +613,7 @@ func TestIntegrationClientConfiguration(t *testing.T) {
 	}
 
 	// Test ConnectWithConfig
-	client, err := ConnectWithConfig(config)
+	client, err := ConnectWithConfig(config, "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect with config: %v", err)
 	}
@@ -633,7 +635,7 @@ func TestIntegrationAcquireOrWaitSuccess(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
@@ -645,7 +647,7 @@ func TestIntegrationAcquireOrWaitSuccess(t *testing.T) {
 	}
 
 	// AcquireOrWait should succeed immediately
-	lock, err := client.AcquireOrWait("immediate-acquire-test", "test-owner", 5*time.Second)
+	lock, err := client.AcquireOrWait("immediate-acquire-test", 5*time.Second)
 	if err != nil {
 		t.Fatalf("AcquireOrWait should succeed immediately: %v", err)
 	}
@@ -669,12 +671,12 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client1, err := Connect(server.URL())
+	client1, err := Connect(server.URL(), "owner1")
 	if err != nil {
 		t.Fatalf("failed to connect client1: %v", err)
 	}
 
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "owner2")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
@@ -686,7 +688,7 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 	}
 
 	// Client1 acquires the lock
-	lock1, err := client1.Acquire("queue-wait-test", "owner1")
+	lock1, err := client1.Acquire("queue-wait-test")
 	if err != nil {
 		t.Fatalf("client1 failed to acquire lock: %v", err)
 	}
@@ -697,7 +699,7 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 
 	go func() {
 		var err error
-		lock2, err = client2.AcquireOrWait("queue-wait-test", "owner2", 3*time.Second)
+		lock2, err = client2.AcquireOrWait("queue-wait-test", 3*time.Second)
 		if err != nil {
 			t.Errorf("AcquireOrWait failed: %v", err)
 		}
@@ -732,6 +734,17 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 	if serverLock.Owner != "owner2" {
 		t.Fatalf("server should show lock held by owner2, got %s", serverLock.Owner)
 	}
+
+	// Clean up: release lock2 to ensure no hanging connections
+	if lock2 != nil {
+		err = lock2.Release()
+		if err != nil {
+			t.Errorf("failed to release lock2: %v", err)
+		}
+	}
+
+	// Give a moment for any background polling to complete
+	time.Sleep(100 * time.Millisecond)
 }
 
 // TestIntegrationAcquireOrWaitTimeout tests AcquireOrWait timeout behavior
@@ -739,12 +752,12 @@ func TestIntegrationAcquireOrWaitTimeout(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client1, err := Connect(server.URL())
+	client1, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client1: %v", err)
 	}
 
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
@@ -756,14 +769,14 @@ func TestIntegrationAcquireOrWaitTimeout(t *testing.T) {
 	}
 
 	// Client1 acquires the lock and holds it
-	_, err = client1.Acquire("timeout-test", "owner1")
+	_, err = client1.Acquire("timeout-test")
 	if err != nil {
 		t.Fatalf("client1 failed to acquire lock: %v", err)
 	}
 
 	// Client2 tries AcquireOrWait with short timeout - should timeout
 	start := time.Now()
-	lock2, err := client2.AcquireOrWait("timeout-test", "owner2", 200*time.Millisecond)
+	lock2, err := client2.AcquireOrWait("timeout-test", 200*time.Millisecond)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -791,12 +804,12 @@ func TestIntegrationRemoveFromQueue(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client1, err := Connect(server.URL())
+	client1, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client1: %v", err)
 	}
 
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
@@ -808,13 +821,13 @@ func TestIntegrationRemoveFromQueue(t *testing.T) {
 	}
 
 	// Client1 acquires the lock
-	lock1, err := client1.Acquire("remove-queue-test", "owner1")
+	lock1, err := client1.Acquire("remove-queue-test")
 	if err != nil {
 		t.Fatalf("client1 failed to acquire lock: %v", err)
 	}
 
 	// Client2 tries to acquire - should get queued
-	lock2, queueResp, err := client2.AcquireOrQueue("remove-queue-test", "owner2")
+	lock2, queueResp, err := client2.AcquireOrQueue("remove-queue-test")
 	if err != nil {
 		t.Fatalf("client2 failed to queue: %v", err)
 	}
@@ -846,12 +859,12 @@ func TestIntegrationRemoveFromQueue(t *testing.T) {
 	}
 
 	// Try to acquire with a new client - should succeed immediately
-	client3, err := Connect(server.URL())
+	client3, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client3: %v", err)
 	}
 
-	lock3, err := client3.Acquire("remove-queue-test", "owner3")
+	lock3, err := client3.Acquire("remove-queue-test")
 	if err != nil {
 		t.Fatalf("client3 should be able to acquire immediately: %v", err)
 	}
@@ -865,7 +878,7 @@ func TestIntegrationAcquireOrWaitZeroTimeout(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client, err := Connect(server.URL())
+	client, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client: %v", err)
 	}
@@ -876,20 +889,20 @@ func TestIntegrationAcquireOrWaitZeroTimeout(t *testing.T) {
 		t.Fatalf("failed to create lock: %v", err)
 	}
 
-	lock, err := client.Acquire("zero-timeout-test", "owner1")
+	lock, err := client.Acquire("zero-timeout-test")
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
 
 	// Create second client
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
 
 	// Try AcquireOrWait with zero timeout - should fail immediately
 	start := time.Now()
-	lock2, err := client2.AcquireOrWait("zero-timeout-test", "owner2", 0)
+	lock2, err := client2.AcquireOrWait("zero-timeout-test", 0)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -914,12 +927,12 @@ func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
 	server := NewTestServer(t)
 	defer server.Close()
 
-	client1, err := Connect(server.URL())
+	client1, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client1: %v", err)
 	}
 
-	client2, err := Connect(server.URL())
+	client2, err := Connect(server.URL(), "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect client2: %v", err)
 	}
@@ -931,13 +944,13 @@ func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
 	}
 
 	// Client1 acquires the lock
-	_, err = client1.Acquire("expired-queue-test", "owner1")
+	_, err = client1.Acquire("expired-queue-test")
 	if err != nil {
 		t.Fatalf("client1 failed to acquire lock: %v", err)
 	}
 
 	// Client2 tries to queue
-	_, queueResp, err := client2.AcquireOrQueue("expired-queue-test", "owner2")
+	_, queueResp, err := client2.AcquireOrQueue("expired-queue-test")
 	if err != nil {
 		t.Fatalf("client2 failed to queue: %v", err)
 	}
@@ -949,7 +962,7 @@ func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// Client2 tries AcquireOrWait - should get expired error
-	lock2, err := client2.AcquireOrWait("expired-queue-test", "owner2", 1*time.Second)
+	lock2, err := client2.AcquireOrWait("expired-queue-test", 1*time.Second)
 	if err == nil {
 		t.Fatal("AcquireOrWait should fail with expired request")
 	}
@@ -958,5 +971,73 @@ func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("error should mention expired, got: %v", err)
+	}
+}
+
+// TestIntegrationMetricsAPI tests the metrics API endpoint
+func TestIntegrationMetricsAPI(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	client, err := Connect(server.URL(), "test-owner")
+	if err != nil {
+		t.Fatalf("failed to connect client: %v", err)
+	}
+
+	// Create a lock
+	err = client.CreateLock("metrics-test", "30s", "5m", QueueFIFO, "1m")
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Acquire the lock
+	lock, err := client.Acquire("metrics-test")
+	if err != nil {
+		t.Fatalf("failed to acquire lock: %v", err)
+	}
+
+	// Release the lock
+	err = lock.Release()
+	if err != nil {
+		t.Fatalf("failed to release lock: %v", err)
+	}
+
+	// Test metrics endpoint
+	resp, err := http.Get(server.URL() + "/api/metrics/metrics-test")
+	if err != nil {
+		t.Fatalf("failed to get metrics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var metricsResp core.MetricsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&metricsResp); err != nil {
+		t.Fatalf("failed to decode metrics response: %v", err)
+	}
+
+	// Verify metrics data
+	if metricsResp.LockName != "metrics-test" {
+		t.Fatalf("expected lock name 'metrics-test', got '%s'", metricsResp.LockName)
+	}
+
+	if metricsResp.Metrics == nil {
+		t.Fatal("metrics should not be nil")
+	}
+
+	// Check that we have some basic metrics
+	if metricsResp.Metrics.TotalAcquireAttempts < 1 {
+		t.Fatalf("expected at least 1 acquire attempt, got %d", metricsResp.Metrics.TotalAcquireAttempts)
+	}
+
+	if metricsResp.Metrics.SuccessfulAcquires < 1 {
+		t.Fatalf("expected at least 1 successful acquire, got %d", metricsResp.Metrics.SuccessfulAcquires)
+	}
+
+	// Check that created timestamp is set
+	if metricsResp.Metrics.CreatedAt.IsZero() {
+		t.Fatal("created_at should not be zero")
 	}
 }

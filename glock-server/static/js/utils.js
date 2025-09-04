@@ -40,8 +40,8 @@ function formatTimeRemaining(lock) {
     const now = new Date();
     const acquiredAt = new Date(lock.acquired_at);
     const lastRefresh = new Date(lock.last_refresh);
-    const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl * 1000);
-    const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl * 1000);
+    const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
+    const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
 
     // Use the earliest expiry time
     const expiryTime = ttlExpiry < maxTTLExpiry ? ttlExpiry : maxTTLExpiry;
@@ -72,8 +72,8 @@ function formatStatus(lock) {
         const now = new Date();
         const acquiredAt = new Date(lock.acquired_at);
         const lastRefresh = new Date(lock.last_refresh);
-        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl * 1000);
-        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl * 1000);
+        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
+        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
 
         if (now > maxTTLExpiry || now > ttlExpiry) {
             statusText = 'Expired';
@@ -100,21 +100,20 @@ function formatOwner(lock) {
 
 // Format queue information
 function formatQueueInfo(lock) {
-    if (!lock.queue || lock.queue_type === 'none') {
+    // Check for no queue
+    if (!lock || !lock.queue_type || lock.queue_type === 'none') {
         return '-';
     }
 
-    const queueSize = lock.queue.size || 0;
+    // Get queue size
+    const queueSize = lock.queue_size || 0;
+
+    // Return plain text format: "X (TYPE)" or "Empty (TYPE)"
     if (queueSize === 0) {
-        return `<span class="queue-info">Empty (${lock.queue_type.toUpperCase()})</span>`;
+        return `Empty (${lock.queue_type.toUpperCase()})`;
     }
 
-    return `<span class="queue-info">
-        <strong>${queueSize}</strong> waiting (${lock.queue_type.toUpperCase()})
-        <button class="btn btn-sm btn-info queue-details-btn" data-lock-name="${lock.name}" title="View queue details">
-            👁️
-        </button>
-    </span>`;
+    return `${queueSize} (${lock.queue_type.toUpperCase()})`;
 }
 
 // Format TTL durations
@@ -128,13 +127,12 @@ function formatTTL(nanoseconds) {
 function generateActionButtons(lock) {
     const actions = [];
 
+    // Metrics button (always available)
+    const metricsBtn = `<button class="metrics-btn" data-lock-name="${lock.name}" title="View metrics">Metrics</button>`;
+    actions.push(metricsBtn);
+
     // Update button (always available for existing locks)
     actions.push(`<button class="btn btn-primary btn-sm action-btn update-btn" data-lock-name="${lock.name}">Update</button>`);
-
-    // Delete button (only if not currently held)
-    if (!lock.owner_id) {
-        actions.push(`<button class="btn btn-danger btn-sm action-btn delete-btn" data-lock-name="${lock.name}">Delete</button>`);
-    }
 
     // Release button (only if currently held)
     if (lock.owner_id) {
@@ -146,6 +144,11 @@ function generateActionButtons(lock) {
         actions.push(`<button class="btn btn-info btn-sm action-btn unfreeze-btn" data-lock-name="${lock.name}">Unfreeze</button>`);
     } else {
         actions.push(`<button class="btn btn-secondary btn-sm action-btn freeze-btn" data-lock-name="${lock.name}">Freeze</button>`);
+    }
+
+    // Delete button (only if not currently held)
+    if (!lock.owner_id) {
+        actions.push(`<button class="btn btn-danger btn-sm action-btn delete-btn" data-lock-name="${lock.name}">Delete</button>`);
     }
 
     return actions.join(' ');

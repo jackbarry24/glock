@@ -38,6 +38,10 @@ func main() {
 		Config:   config,
 	}
 
+	// Start background cleanup goroutine for TTL expiration processing
+	locks.StartCleanupGoroutine()
+	defer locks.StopCleanupGoroutine()
+
 	// Setup Gin router
 	r := gin.Default()
 
@@ -89,6 +93,9 @@ func main() {
 		})
 		api.GET("/list", func(c *gin.Context) {
 			core.ListHandler(c, locks)
+		})
+		api.GET("/metrics/:name", func(c *gin.Context) {
+			core.MetricsHandler(c, locks)
 		})
 
 		// Configuration endpoints

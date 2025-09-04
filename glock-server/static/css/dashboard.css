@@ -110,8 +110,11 @@
 
 /* Action Buttons */
 .action-btn {
-    padding: 6px 10px;
-    font-size: 11px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
     border-radius: 4px;
     margin-right: 4px;
     transition: all 0.2s ease;
@@ -123,7 +126,9 @@
 }
 
 /* Queue Info */
-.queue-info {
+.queue-info,
+.queue-empty,
+.queue-none {
     font-size: 11px;
     color: #666;
     font-style: italic;
@@ -132,9 +137,50 @@
     gap: 8px;
 }
 
+.queue-none {
+    color: #999;
+}
+
+.queue-empty {
+    color: #666;
+}
+
+.queue-active {
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #856404;
+}
+
+.queue-count {
+    font-size: 14px;
+    font-weight: bold;
+    color: #d9534f;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin-right: 2px;
+}
+
+.queue-type {
+    font-size: 10px;
+    color: #6c757d;
+    font-weight: normal;
+}
+
 .queue-details-btn {
     padding: 2px 6px;
     font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
     background: transparent;
     border: 1px solid #17a2b8;
     color: #17a2b8;
@@ -313,8 +359,21 @@
 
     .action-btn {
         padding: 4px 6px;
-        font-size: 10px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        letter-spacing: 0.025em;
         margin-right: 2px;
+    }
+
+    /* Mobile action button font consistency */
+    .actions-column button,
+    .actions-column .btn,
+    .actions-column .metrics-btn {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+        font-weight: 500 !important;
+        font-size: 11px !important;
+        letter-spacing: 0.025em !important;
     }
 
     .status-badge {
@@ -418,4 +477,837 @@
 .success {
     border-color: #27ae60 !important;
     box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.2) !important;
+}
+
+/* Metrics Modal Styles */
+#metrics-modal .modal-content {
+    max-width: 1000px !important;
+    width: 90% !important;
+    box-sizing: border-box;
+    padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    height: 85vh;
+    max-height: 85vh;
+    min-height: 60vh;
+    overflow: hidden !important;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+#metrics-modal .modal-body {
+    padding: 32px !important;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+    min-height: 0;
+    /* Allow flex item to shrink */
+    height: 0;
+    /* Force flex item to use available space */
+    scrollbar-width: thin;
+    scrollbar-color: #bbb #f5f5f5;
+    background: #fafbfc;
+    position: relative;
+}
+
+/* Webkit scrollbar styling */
+#metrics-modal .modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+#metrics-modal .modal-body::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+#metrics-modal .modal-body::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 4px;
+    border: 1px solid #f5f5f5;
+}
+
+#metrics-modal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+.metrics-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+    min-height: 600px;
+    /* Ensure there's enough content to trigger scrolling */
+}
+
+.metrics-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e9ecef;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.metrics-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.metrics-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.metrics-card h4 {
+    margin: 0 0 16px 0;
+    color: #2c3e50;
+    font-size: 16px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    position: relative;
+}
+
+.metrics-card h4::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 1px;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.metrics-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    transition: all 0.2s ease;
+}
+
+.metric-item:hover {
+    background: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.metric-label {
+    font-weight: 500;
+    color: #5a6c7d;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.metric-value {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 14px;
+    text-align: right;
+    flex-shrink: 0;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.metric-value.success-rate {
+    color: #27ae60;
+}
+
+.metric-value.error-count {
+    color: #e74c3c;
+}
+
+.owner-history-section {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 2px solid #e9ecef;
+}
+
+.owner-history-section h4 {
+    margin: 0 0 16px 0;
+    color: #2c3e50;
+    font-size: 16px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    position: relative;
+}
+
+.owner-history-section h4::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 1px;
+}
+
+.owner-history-table {
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.owner-history-table .no-data {
+    padding: 32px 20px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    font-size: 14px;
+}
+
+.owner-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f1f3f4;
+    transition: background-color 0.2s ease;
+}
+
+.owner-history-item:hover {
+    background-color: #f8f9fa;
+}
+
+.owner-history-item:last-child {
+    border-bottom: none;
+}
+
+.owner-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+}
+
+.owner-name {
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.owner-id {
+    font-size: 12px;
+    color: #666;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.owner-timing {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    font-size: 12px;
+    color: #666;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.owner-acquired {
+    color: #27ae60;
+    font-weight: 500;
+}
+
+.owner-duration {
+    color: #f39c12;
+    font-weight: 500;
+}
+
+/* Action Button Font Consistency */
+.actions-column button,
+.actions-column .btn,
+.actions-column .metrics-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+    font-weight: 500 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.025em !important;
+}
+
+/* Metrics button in actions */
+.metrics-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    margin-right: 5px !important;
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+.metrics-btn:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3) !important;
+}
+
+/* Ensure actions column doesn't cut off buttons */
+.actions-column {
+    min-width: 200px !important;
+    max-width: none !important;
+    overflow: visible !important;
+}
+
+/* Metrics Modal Actions */
+#metrics-modal .modal-header {
+    flex-shrink: 0;
+    padding: 24px 32px !important;
+    border-bottom: 1px solid #e9ecef !important;
+    margin: 0 !important;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px 8px 0 0;
+}
+
+#metrics-modal .modal-header h3 {
+    color: white !important;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#metrics-modal .modal-close {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: 20px;
+}
+
+#metrics-modal .modal-close:hover {
+    color: white !important;
+}
+
+#metrics-modal .modal-actions {
+    padding: 24px 32px !important;
+    border-top: 1px solid #e9ecef;
+    background: white;
+    border-radius: 0 0 8px 8px;
+    margin-top: auto !important;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+#metrics-modal .modal-actions .btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#metrics-modal .modal-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Loading indicator in metrics modal */
+#metrics-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+    font-size: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+#metrics-loading::before {
+    content: '';
+    width: 32px;
+    height: 32px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Responsive adjustments for metrics modal */
+@media (max-width: 1024px) {
+    #metrics-modal .modal-content {
+        max-width: 95vw !important;
+        width: 95vw !important;
+        margin: 20px;
+    }
+
+    .metrics-overview {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    #metrics-modal .modal-content {
+        max-width: 95vw !important;
+        width: 95vw !important;
+        margin: 10px;
+        max-height: 90vh;
+        min-height: 70vh;
+    }
+
+    #metrics-modal .modal-body {
+        padding: 20px !important;
+        min-height: 300px;
+        max-height: calc(90vh - 140px) !important;
+    }
+
+    #metrics-modal .modal-header,
+    #metrics-modal .modal-actions {
+        padding: 20px !important;
+    }
+
+    .metrics-overview {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .metrics-card {
+        padding: 16px;
+    }
+
+    .metrics-card h4 {
+        font-size: 15px;
+        margin-bottom: 12px;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .metric-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        padding: 10px 12px;
+    }
+
+    .metric-value {
+        text-align: left;
+        font-size: 13px;
+    }
+
+    .owner-history-section {
+        margin-top: 24px;
+        padding-top: 16px;
+    }
+
+    .owner-history-section h4 {
+        font-size: 15px;
+        margin-bottom: 12px;
+    }
+
+    .owner-history-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 12px 16px;
+    }
+
+    .owner-timing {
+        align-items: flex-start;
+        text-align: left;
+        width: 100%;
+    }
+
+    .owner-acquired,
+    .owner-duration {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    #metrics-modal .modal-content {
+        width: 98vw !important;
+        margin: 5px;
+        max-height: 95vh;
+    }
+
+    #metrics-modal .modal-body {
+        padding: 16px !important;
+        max-height: calc(95vh - 120px) !important;
+    }
+
+    #metrics-modal .modal-header,
+    #metrics-modal .modal-actions {
+        padding: 16px !important;
+    }
+
+    .metrics-card {
+        padding: 12px;
+    }
+
+    .metrics-grid {
+        gap: 8px;
+    }
+
+    .metric-item {
+        padding: 8px 10px;
+    }
+}
+
+/* Create Lock and Update Lock Modal Styles */
+#create-modal .modal-content,
+#update-modal .modal-content {
+    max-width: 600px !important;
+    width: 90% !important;
+    box-sizing: border-box;
+    padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+    min-height: 40vh;
+    overflow: hidden !important;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+#create-modal .modal-header,
+#update-modal .modal-header {
+    flex-shrink: 0;
+    padding: 24px 32px !important;
+    border-bottom: 1px solid #e9ecef !important;
+    margin: 0 !important;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px 8px 0 0;
+}
+
+#create-modal .modal-header h3,
+#update-modal .modal-header h3 {
+    color: white !important;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#create-modal .modal-close,
+#update-modal .modal-close {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: 20px;
+}
+
+#create-modal .modal-close:hover,
+#update-modal .modal-close:hover {
+    color: white !important;
+}
+
+#create-modal .modal-body,
+#update-modal .modal-body {
+    padding: 0 !important;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box;
+    min-height: 0;
+    height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #bbb #f5f5f5;
+    background: #fafbfc;
+    position: relative;
+}
+
+/* Webkit scrollbar styling for create/update modals */
+#create-modal .modal-body::-webkit-scrollbar,
+#update-modal .modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+#create-modal .modal-body::-webkit-scrollbar-track,
+#update-modal .modal-body::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+#create-modal .modal-body::-webkit-scrollbar-thumb,
+#update-modal .modal-body::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 4px;
+    border: 1px solid #f5f5f5;
+}
+
+#create-modal .modal-body::-webkit-scrollbar-thumb:hover,
+#update-modal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+#create-modal .modal-actions,
+#update-modal .modal-actions {
+    padding: 24px 32px !important;
+    border-top: 1px solid #e9ecef;
+    background: white;
+    border-radius: 0 0 8px 8px;
+    margin-top: auto !important;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+#create-modal .modal-actions .btn,
+#update-modal .modal-actions .btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#create-modal .modal-actions .btn:hover,
+#update-modal .modal-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Enhanced form styling for create/update modals */
+#create-lock-form,
+#update-lock-form {
+    padding: 32px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0;
+}
+
+#create-lock-form .form-group,
+#update-lock-form .form-group {
+    margin-bottom: 24px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+#create-lock-form .form-group:first-child,
+#update-lock-form .form-group:first-child {
+    margin-top: 0 !important;
+}
+
+#create-lock-form .form-group input,
+#create-lock-form .form-group select,
+#create-lock-form .form-group textarea,
+#update-lock-form .form-group input,
+#update-lock-form .form-group select,
+#update-lock-form .form-group textarea {
+    width: 100% !important;
+    padding: 12px 16px !important;
+    border: 2px solid #e9ecef !important;
+    border-radius: 6px !important;
+    font-size: 14px !important;
+    font-family: inherit !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s ease !important;
+    background: white !important;
+}
+
+#create-lock-form .form-group input:focus,
+#create-lock-form .form-group select:focus,
+#create-lock-form .form-group textarea:focus,
+#update-lock-form .form-group input:focus,
+#update-lock-form .form-group select:focus,
+#update-lock-form .form-group textarea:focus {
+    border-color: #667eea !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+    outline: none !important;
+}
+
+#create-lock-form .form-group label,
+#update-lock-form .form-group label {
+    display: block !important;
+    margin-bottom: 8px !important;
+    font-weight: 600 !important;
+    color: #2c3e50 !important;
+    font-size: 14px !important;
+}
+
+#create-lock-form .form-row,
+#update-lock-form .form-row {
+    display: flex !important;
+    gap: 20px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin-bottom: 24px !important;
+}
+
+#create-lock-form .form-row .form-group,
+#update-lock-form .form-row .form-group {
+    flex: 1 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Enhanced help tooltips in modals */
+#create-modal .help-tooltip,
+#update-modal .help-tooltip {
+    color: #667eea;
+}
+
+#create-modal .help-tooltip:hover,
+#update-modal .help-tooltip:hover {
+    color: #5a6fd8;
+}
+
+/* Responsive adjustments for create/update modals */
+@media (max-width: 768px) {
+
+    #create-modal .modal-content,
+    #update-modal .modal-content {
+        max-width: 95vw !important;
+        width: 95vw !important;
+        margin: 10px;
+        max-height: 90vh;
+    }
+
+    #create-modal .modal-header,
+    #create-modal .modal-actions,
+    #update-modal .modal-header,
+    #update-modal .modal-actions {
+        padding: 20px !important;
+    }
+
+    #create-lock-form,
+    #update-lock-form {
+        padding: 20px !important;
+    }
+
+    #create-lock-form .form-row,
+    #update-lock-form .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    #create-lock-form .form-row .form-group,
+    #update-lock-form .form-row .form-group {
+        margin-bottom: 20px !important;
+    }
+}
+
+/* Confirm and Alert Modal Styles */
+#confirm-modal .modal-content,
+#alert-modal .modal-content {
+    max-width: 500px !important;
+    width: 90% !important;
+    box-sizing: border-box;
+    padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+#confirm-modal .modal-header,
+#alert-modal .modal-header {
+    flex-shrink: 0;
+    padding: 24px 32px !important;
+    border-bottom: 1px solid #e9ecef !important;
+    margin: 0 !important;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px 8px 0 0;
+}
+
+#confirm-modal .modal-header h3,
+#alert-modal .modal-header h3 {
+    color: white !important;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#confirm-modal .modal-body,
+#alert-modal .modal-body {
+    padding: 32px !important;
+    background: #fafbfc;
+    text-align: center;
+}
+
+#confirm-modal .modal-body p,
+#alert-modal .modal-body p {
+    font-size: 16px;
+    line-height: 1.5;
+    color: #2c3e50;
+    margin: 0;
+}
+
+#confirm-modal .modal-actions,
+#alert-modal .modal-actions {
+    padding: 24px 32px !important;
+    border-top: 1px solid #e9ecef;
+    background: white;
+    border-radius: 0 0 8px 8px;
+    flex-shrink: 0;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+    justify-content: center;
+}
+
+#confirm-modal .modal-actions .btn,
+#alert-modal .modal-actions .btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    min-width: 100px;
+}
+
+#confirm-modal .modal-actions .btn:hover,
+#alert-modal .modal-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+@media (max-width: 768px) {
+
+    #confirm-modal .modal-content,
+    #alert-modal .modal-content {
+        max-width: 95vw !important;
+        width: 95vw !important;
+        margin: 10px;
+    }
+
+    #confirm-modal .modal-header,
+    #confirm-modal .modal-actions,
+    #alert-modal .modal-header,
+    #alert-modal .modal-actions {
+        padding: 20px !important;
+    }
+
+    #confirm-modal .modal-body,
+    #alert-modal .modal-body {
+        padding: 24px 20px !important;
+    }
 }

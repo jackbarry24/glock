@@ -11,10 +11,11 @@ import (
 )
 
 type GlockServer struct {
-	Size     int64
-	Capacity int
-	Locks    sync.Map // Name -> *Lock
-	Config   *Config
+	Size        int64
+	Capacity    int
+	Locks       sync.Map // Name -> *Lock
+	Config      *Config
+	cleanupDone chan struct{} // Channel to signal cleanup goroutine to stop
 }
 
 // generateRequestID creates a unique request ID for queue entries
@@ -118,6 +119,7 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		return nil, http.StatusConflict, fmt.Errorf("lock %s already exists", req.Name)
 	}
 
+	lock.QueueSize = lock.getCurrentQueueSize()
 	return lock, http.StatusOK, nil
 }
 
@@ -203,6 +205,7 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		lock.QueueTimeout = queueTimeoutDuration
 	}
 
+	lock.QueueSize = lock.getCurrentQueueSize()
 	return lock, http.StatusOK, nil
 }
 
@@ -250,10 +253,15 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 		// Lock is available, acquire it immediately
 		lock.Owner = req.Owner
 		lock.OwnerID = req.OwnerID
-		lock.AcquiredAt = time.Now()
-		lock.LastRefresh = time.Now()
+		acquiredAt := time.Now()
+		lock.AcquiredAt = acquiredAt
+		lock.LastRefresh = acquiredAt
 		lock.Available = false
 		lock.Token++
+
+		// Record metrics
+		lock.recordAcquireAttempt(true)
+		lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt)
 
 		return lock, http.StatusOK, nil
 	}
@@ -266,6 +274,8 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	}
 
 	if lock.QueueType == QueueNone || !shouldQueue {
+		// Record failed acquire attempt
+		lock.recordAcquireAttempt(false)
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
 
@@ -283,6 +293,34 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	isLIFO := lock.QueueType == QueueLIFO
 	lock.queue.Enqueue(queueReq, isLIFO)
 	position := lock.queue.GetPosition(requestID)
+
+	// Record metrics
+	lock.recordAcquireAttempt(false)
+	lock.recordQueueRequest()
+
+	// Check if we can immediately acquire the lock (in case TTL just expired)
+	// This handles race conditions where TTL expires between the initial check and queuing
+	if lock.IsAvailable() {
+		nextReq := lock.queue.GetNext()
+		if nextReq != nil && nextReq.ID == requestID {
+			// We can acquire immediately
+			lock.queue.Dequeue()
+			lock.Owner = req.Owner
+			lock.OwnerID = req.OwnerID
+			acquiredAt := time.Now()
+			lock.AcquiredAt = acquiredAt
+			lock.LastRefresh = acquiredAt
+			lock.Available = false
+			lock.Token++
+
+			// Update metrics
+			lock.recordAcquireAttempt(true)
+			lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt)
+			lock.recordQueueTimeout() // Remove from queue count since we're processing it
+
+			return lock, http.StatusOK, nil
+		}
+	}
 
 	queueResp := &QueueResponse{
 		RequestID: requestID,
@@ -400,24 +438,33 @@ func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 
 	// Check if lock is frozen
 	if lock.Frozen {
+		lock.recordFailedOperation()
 		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be refreshed", req.Name)
 	}
 
 	if lock.OwnerID != req.OwnerID {
+		lock.recordFailedOperation()
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
 	now := time.Now()
 	if now.After(lock.AcquiredAt.Add(lock.MaxTTL)) {
+		lock.recordMaxTTLExpiration()
 		return nil, http.StatusConflict, fmt.Errorf("lock has exceeded max ttl")
 	}
 	if now.After(lock.LastRefresh.Add(lock.TTL)) {
+		lock.recordTTLExpiration()
 		return nil, http.StatusConflict, fmt.Errorf("lock ttl has expired")
 	}
 	if lock.Token > req.Token {
+		lock.recordStaleToken()
 		return nil, http.StatusConflict, fmt.Errorf("another client has acquired this lock")
 	}
 	lock.LastRefresh = now
 
+	// Record successful refresh
+	lock.recordRefresh()
+
+	lock.QueueSize = lock.getCurrentQueueSize()
 	return lock, http.StatusOK, nil
 }
 
@@ -446,6 +493,96 @@ func (g *GlockServer) VerifyLock(req *VerifyRequest) (bool, int, error) {
 	return true, http.StatusOK, nil
 }
 
+// processQueueForAvailableLock checks if a lock is available and grants it to the next queued client
+func (g *GlockServer) processQueueForAvailableLock(lock *Lock) bool {
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	// Check if lock is available and has a queue
+	if !lock.IsAvailable() || lock.queue == nil || lock.queue.Size() == 0 {
+		return false
+	}
+
+	// Find the next non-expired request
+	var nextOwner *QueueRequest
+	if front := lock.queue.list.Front(); front != nil {
+		candidate := front.Value.(*QueueRequest)
+		if time.Now().Before(candidate.TimeoutAt) {
+			// Request is not expired, dequeue it
+			nextOwner = lock.queue.Dequeue()
+		}
+	}
+
+	if nextOwner == nil {
+		return false
+	}
+
+	// Grant the lock to the next client
+	acquiredAt := time.Now()
+	lock.Owner = nextOwner.Owner
+	lock.OwnerID = nextOwner.OwnerID
+	lock.AcquiredAt = acquiredAt
+	lock.LastRefresh = acquiredAt
+	lock.Available = false
+	lock.Token++
+
+	// Record metrics for new owner
+	lock.recordAcquireAttempt(true)
+	lock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt)
+	lock.recordQueueTimeout() // Remove from queue count since it's being processed
+
+	return true
+}
+
+// StartCleanupGoroutine starts a background goroutine that periodically cleans up expired locks and processes queues
+func (g *GlockServer) StartCleanupGoroutine() {
+	g.cleanupDone = make(chan struct{})
+	go g.cleanupWorker()
+}
+
+// StopCleanupGoroutine stops the cleanup goroutine
+func (g *GlockServer) StopCleanupGoroutine() {
+	if g.cleanupDone != nil {
+		close(g.cleanupDone)
+	}
+}
+
+// cleanupWorker runs in a background goroutine and periodically processes expired locks
+func (g *GlockServer) cleanupWorker() {
+	ticker := time.NewTicker(g.Config.CleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			g.processExpiredLocks()
+		case <-g.cleanupDone:
+			return
+		}
+	}
+}
+
+// processExpiredLocks checks all locks for TTL expiration and processes their queues
+func (g *GlockServer) processExpiredLocks() {
+	g.Locks.Range(func(key, value interface{}) bool {
+		lockName := key.(string)
+		lock := value.(*Lock)
+
+		// Process the queue if the lock is available due to TTL expiration
+		if g.processQueueForAvailableLock(lock) {
+			// Lock was granted to a queued client, update in map
+			g.Locks.Store(lockName, lock)
+		}
+
+		// Clean expired queue entries
+		if lock.queue != nil {
+			lock.queue.CleanExpired(time.Now())
+		}
+
+		return true // continue iteration
+	})
+}
+
 func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 	lockVal, exists := g.Locks.Load(req.Name)
 	if !exists {
@@ -455,9 +592,11 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if lock.OwnerID != req.OwnerID {
+		lock.recordFailedOperation()
 		return false, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
 	if lock.Token > req.Token {
+		lock.recordStaleToken()
 		return false, http.StatusConflict, fmt.Errorf("another client has acquired this lock")
 	}
 
@@ -478,6 +617,9 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 		}
 	}
 
+	// Record release metrics before creating new lock
+	lock.recordRelease()
+
 	newLock := Lock{
 		Name:         lock.Name,
 		Owner:        "",
@@ -493,16 +635,23 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 		QueueTimeout: lock.QueueTimeout,
 		queue:        lock.queue, // Transfer the queue
 		mu:           sync.Mutex{},
+		metrics:      lock.metrics, // Transfer metrics
 	}
 
 	// If there's someone in queue, immediately assign the lock to them
 	if nextOwner != nil {
+		acquiredAt := time.Now()
 		newLock.Owner = nextOwner.Owner
 		newLock.OwnerID = nextOwner.OwnerID
-		newLock.AcquiredAt = time.Now()
-		newLock.LastRefresh = time.Now()
+		newLock.AcquiredAt = acquiredAt
+		newLock.LastRefresh = acquiredAt
 		newLock.Available = false
 		newLock.Token++
+
+		// Record metrics for new owner
+		newLock.recordAcquireAttempt(true)
+		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt)
+		newLock.recordQueueTimeout() // Remove from queue count since it's being processed
 	}
 
 	g.Locks.Store(req.Name, &newLock)

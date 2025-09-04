@@ -19,7 +19,7 @@ func TestConnect(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := Connect(tt.serverURL)
+			client, err := Connect(tt.serverURL, "test-owner")
 			if tt.expectError {
 				if err == nil {
 					t.Error("expected error but got none")
@@ -47,7 +47,7 @@ func TestConnectWithConfig(t *testing.T) {
 		MaxRetries: 5,
 	}
 
-	client, err := ConnectWithConfig(config)
+	client, err := ConnectWithConfig(config, "test-owner")
 	if err != nil {
 		t.Fatalf("failed to connect with config: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestDefaultClientConfig(t *testing.T) {
 
 // TestGetOwnedLocks tests retrieving owned locks
 func TestGetOwnedLocks(t *testing.T) {
-	client, _ := Connect("http://test-server")
+	client, _ := Connect("http://test-server", "test-owner")
 
 	// Add some locks to the client's store
 	lock1 := &Lock{Name: "lock1", Owner: "owner1"}
@@ -107,7 +107,7 @@ func TestGetOwnedLocks(t *testing.T) {
 
 // TestGetLockByName tests retrieving a lock by name
 func TestGetLockByName(t *testing.T) {
-	client, _ := Connect("http://test-server")
+	client, _ := Connect("http://test-server", "test-owner")
 
 	// Add a lock to the client's store
 	lock := &Lock{Name: "test-lock", Owner: "test-owner"}
@@ -187,7 +187,7 @@ func TestQueueBehaviorConstants(t *testing.T) {
 // TestRemoveFromQueue tests the RemoveFromQueue method
 func TestRemoveFromQueue(t *testing.T) {
 	// This test requires a running server, so we'll test the method structure
-	client, err := Connect("http://test-server:8080")
+	client, err := Connect("http://test-server:8080", "test-owner")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -203,14 +203,14 @@ func TestRemoveFromQueue(t *testing.T) {
 
 // TestAcquireOrWaitTimeout tests AcquireOrWait with timeout
 func TestAcquireOrWaitTimeout(t *testing.T) {
-	client, err := Connect("http://test-server:8080")
+	client, err := Connect("http://test-server:8080", "test-owner")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	// Test with a very short timeout - should fail quickly
 	start := time.Now()
-	lock, err := client.AcquireOrWait("test-lock", "test-owner", 10*time.Millisecond)
+	lock, err := client.AcquireOrWait("test-lock", 10*time.Millisecond)
 	elapsed := time.Since(start)
 
 	// Should fail with connection error due to test server not existing
@@ -229,13 +229,13 @@ func TestAcquireOrWaitTimeout(t *testing.T) {
 
 // TestAcquireOrWaitMethodSignature tests that AcquireOrWait has the right signature
 func TestAcquireOrWaitMethodSignature(t *testing.T) {
-	client, err := Connect("http://test-server:8080")
+	client, err := Connect("http://test-server:8080", "test-owner")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	// Test that we can call the method (it will fail with network error, but signature is correct)
-	lock, err := client.AcquireOrWait("test-lock", "test-owner", time.Second)
+	lock, err := client.AcquireOrWait("test-lock", time.Second)
 
 	// Should fail with connection error
 	if err == nil {
@@ -248,13 +248,13 @@ func TestAcquireOrWaitMethodSignature(t *testing.T) {
 
 // TestAcquireOrWaitZeroTimeout tests AcquireOrWait with zero timeout
 func TestAcquireOrWaitZeroTimeout(t *testing.T) {
-	client, err := Connect("http://test-server:8080")
+	client, err := Connect("http://test-server:8080", "test-owner")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	// Test with zero timeout
-	lock, err := client.AcquireOrWait("test-lock", "test-owner", 0)
+	lock, err := client.AcquireOrWait("test-lock", 0)
 
 	// Should fail immediately with connection error
 	if err == nil {
@@ -267,14 +267,14 @@ func TestAcquireOrWaitZeroTimeout(t *testing.T) {
 
 // TestAcquireOrWaitNegativeTimeout tests AcquireOrWait with negative timeout
 func TestAcquireOrWaitNegativeTimeout(t *testing.T) {
-	client, err := Connect("http://test-server:8080")
+	client, err := Connect("http://test-server:8080", "test-owner")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	// Test with negative timeout (should behave like zero timeout)
 	start := time.Now()
-	lock, err := client.AcquireOrWait("test-lock", "test-owner", -time.Second)
+	lock, err := client.AcquireOrWait("test-lock", -time.Second)
 	elapsed := time.Since(start)
 
 	// Should fail with connection error

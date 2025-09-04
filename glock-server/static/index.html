@@ -266,9 +266,171 @@
         </div>
     </div>
 
+    <!-- Metrics Modal -->
+    <div id="metrics-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="metrics-title">Lock Metrics</h3>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="metrics-loading" class="loading-indicator">
+                    Loading metrics...
+                </div>
+                <div id="metrics-content" style="display: none;">
+                    <div class="metrics-overview">
+                        <div class="metrics-card">
+                            <h4>Usage Statistics</h4>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <span class="metric-label">Total Attempts:</span>
+                                    <span class="metric-value" id="metric-total-attempts">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Successful:</span>
+                                    <span class="metric-value" id="metric-successful">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Failed:</span>
+                                    <span class="metric-value" id="metric-failed">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Success Rate:</span>
+                                    <span class="metric-value" id="metric-success-rate">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card">
+                            <h4>Queue Statistics</h4>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <span class="metric-label">Current Queue:</span>
+                                    <span class="metric-value" id="metric-current-queue">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Total Queued:</span>
+                                    <span class="metric-value" id="metric-total-queued">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Queue Timeouts:</span>
+                                    <span class="metric-value" id="metric-queue-timeouts">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Avg Queue Time:</span>
+                                    <span class="metric-value" id="metric-avg-queue-time">0ms</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card">
+                            <h4>Timing Statistics</h4>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <span class="metric-label">Current Hold Time:</span>
+                                    <span class="metric-value" id="metric-current-hold">0ms</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Avg Hold Time:</span>
+                                    <span class="metric-value" id="metric-avg-hold">0ms</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Max Hold Time:</span>
+                                    <span class="metric-value" id="metric-max-hold">0ms</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Total Hold Time:</span>
+                                    <span class="metric-value" id="metric-total-hold">0ms</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card">
+                            <h4>Owner Statistics</h4>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <span class="metric-label">Owner Changes:</span>
+                                    <span class="metric-value" id="metric-owner-changes">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Unique Owners:</span>
+                                    <span class="metric-value" id="metric-unique-owners">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Refresh Count:</span>
+                                    <span class="metric-value" id="metric-refresh-count">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Heartbeat Count:</span>
+                                    <span class="metric-value" id="metric-heartbeat-count">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card">
+                            <h4>Error Statistics</h4>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <span class="metric-label">Failed Operations:</span>
+                                    <span class="metric-value" id="metric-failed-ops">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Stale Tokens:</span>
+                                    <span class="metric-value" id="metric-stale-tokens">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">TTL Expirations:</span>
+                                    <span class="metric-value" id="metric-ttl-expirations">0</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Max TTL Expirations:</span>
+                                    <span class="metric-value" id="metric-max-ttl-expirations">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card">
+                            <h4>Activity Timeline</h4>
+                            <div class="metrics-timeline">
+                                <div class="metric-item">
+                                    <span class="metric-label">Created:</span>
+                                    <span class="metric-value" id="metric-created">Never</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Last Activity:</span>
+                                    <span class="metric-value" id="metric-last-activity">Never</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Age:</span>
+                                    <span class="metric-value" id="metric-age">0s</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Idle Time:</span>
+                                    <span class="metric-value" id="metric-idle-time">0s</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="owner-history-section">
+                        <h4>Recent Owner History</h4>
+                        <div id="owner-history-table" class="owner-history-table">
+                            <div class="no-data">No ownership history available</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary modal-close">Close</button>
+                <button type="button" class="btn btn-primary" id="refresh-metrics-btn">Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/utils.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/locks.js"></script>
-    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/metrics.js"></script>
     <script>
         // Position tooltips dynamically to avoid modal clipping
         document.addEventListener('DOMContentLoaded', function () {

@@ -150,6 +150,8 @@ body {
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
@@ -169,6 +171,9 @@ body {
 .btn-primary {
     background-color: #007bff;
     color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.025em;
 }
 
 .btn-primary:hover {
@@ -178,6 +183,9 @@ body {
 .btn-success {
     background-color: #28a745;
     color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.025em;
 }
 
 .btn-success:hover {
@@ -187,6 +195,9 @@ body {
 .btn-danger {
     background-color: #dc3545;
     color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.025em;
 }
 
 .btn-danger:hover {
@@ -196,6 +207,9 @@ body {
 .btn-warning {
     background-color: #ffc107;
     color: #212529;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.025em;
 }
 
 .btn-warning:hover {
@@ -205,6 +219,9 @@ body {
 .btn-secondary {
     background-color: #6c757d;
     color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.025em;
 }
 
 .btn-secondary:hover {
@@ -214,6 +231,9 @@ body {
 .btn-sm {
     padding: 4px 8px;
     font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.025em;
 }
 
 /* Controls Section */

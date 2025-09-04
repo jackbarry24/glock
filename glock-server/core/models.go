@@ -122,3 +122,59 @@ type ReleaseRequest struct {
 type ReleaseResponse struct {
 	Success bool `json:"success"`
 }
+
+// LockMetrics represents comprehensive metrics for a distributed lock
+type LockMetrics struct {
+	// Usage Statistics
+	TotalAcquireAttempts int64         `json:"total_acquire_attempts"`
+	SuccessfulAcquires   int64         `json:"successful_acquires"`
+	FailedAcquires       int64         `json:"failed_acquires"`
+	CurrentHoldTime      time.Duration `json:"current_hold_time"`
+	TotalHoldTime        time.Duration `json:"total_hold_time"`
+	AverageHoldTime      time.Duration `json:"average_hold_time"`
+	MaxHoldTime          time.Duration `json:"max_hold_time"`
+
+	// Queue Statistics
+	CurrentQueueSize     int64         `json:"current_queue_size"`
+	TotalQueuedRequests  int64         `json:"total_queued_requests"`
+	AverageQueueWaitTime time.Duration `json:"average_queue_wait_time"`
+	MaxQueueWaitTime     time.Duration `json:"max_queue_wait_time"`
+	QueueTimeoutCount    int64         `json:"queue_timeout_count"`
+
+	// TTL/Expiration Statistics
+	TTLExpirationCount    int64 `json:"ttl_expiration_count"`
+	MaxTTLExpirationCount int64 `json:"max_ttl_expiration_count"`
+	RefreshCount          int64 `json:"refresh_count"`
+	HeartbeatCount        int64 `json:"heartbeat_count"`
+
+	// Owner Statistics
+	OwnerChangeCount  int64 `json:"owner_change_count"`
+	UniqueOwnersCount int64 `json:"unique_owners_count"`
+
+	// Error Statistics
+	FailedOperations int64 `json:"failed_operations"`
+	StaleTokenErrors int64 `json:"stale_token_errors"`
+	NetworkErrors    int64 `json:"network_errors"`
+
+	// Time-based metrics
+	CreatedAt      time.Time `json:"created_at"`
+	LastActivityAt time.Time `json:"last_activity_at"`
+
+	// Owner history (keep last N owners for trending)
+	OwnerHistory []OwnerRecord `json:"owner_history,omitempty"`
+}
+
+// OwnerRecord tracks ownership changes
+type OwnerRecord struct {
+	Owner      string        `json:"owner"`
+	OwnerID    string        `json:"owner_id"`
+	AcquiredAt time.Time     `json:"acquired_at"`
+	ReleasedAt *time.Time    `json:"released_at,omitempty"`
+	HoldTime   time.Duration `json:"hold_time"`
+}
+
+// MetricsResponse represents the response containing lock metrics
+type MetricsResponse struct {
+	LockName string       `json:"lock_name"`
+	Metrics  *LockMetrics `json:"metrics"`
+}

@@ -17,7 +17,10 @@ class LockManager {
 
     init() {
         this.bindEvents();
-        this.loadLocks();
+        // Small delay to ensure all components are initialized
+        setTimeout(() => {
+            this.loadLocks();
+        }, 50);
     }
 
     bindEvents() {
@@ -93,6 +96,20 @@ class LockManager {
             } else if (e.target.classList.contains('queue-details-btn')) {
                 const lockName = e.target.dataset.lockName;
                 this.showQueueDetails(lockName);
+            } else if (e.target.classList.contains('metrics-btn')) {
+                const lockName = e.target.dataset.lockName;
+                if (window.metricsManager) {
+                    window.metricsManager.showMetricsModal(lockName);
+                } else {
+                    console.warn('MetricsManager not available yet, retrying in 100ms...');
+                    setTimeout(() => {
+                        if (window.metricsManager) {
+                            window.metricsManager.showMetricsModal(lockName);
+                        } else {
+                            Utils.showAlert('Error', 'Metrics functionality is not available. Please refresh the page.', 'error');
+                        }
+                    }, 100);
+                }
             }
         });
     }
@@ -141,8 +158,8 @@ class LockManager {
         const now = new Date();
         const acquiredAt = new Date(lock.acquired_at);
         const lastRefresh = new Date(lock.last_refresh);
-        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl * 1000);
-        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl * 1000);
+        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
+        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
 
         return now <= maxTTLExpiry && now <= ttlExpiry;
     }
@@ -186,7 +203,9 @@ class LockManager {
             return;
         }
 
-        const rows = this.filteredLocks.map(lock => `
+        const rows = this.filteredLocks.map(lock => {
+            const actionButtons = Utils.generateActionButtons(lock);
+            return `
             <tr class="loading-row ${lock.frozen ? 'frozen-row' : ''}">
                 <td><strong>${Utils.escapeHtml(lock.name)}</strong></td>
                 <td>${Utils.formatOwner(lock)}</td>
@@ -195,9 +214,9 @@ class LockManager {
                 <td>${Utils.formatTTL(lock.ttl)}</td>
                 <td>${Utils.formatTTL(lock.max_ttl)}</td>
                 <td>${Utils.formatQueueInfo(lock)}</td>
-                <td class="actions-column">${Utils.generateActionButtons(lock)}</td>
+                <td class="actions-column">${actionButtons}</td>
             </tr>
-        `).join('');
+        `}).join('');
 
         tbody.innerHTML = rows;
     }
@@ -437,12 +456,12 @@ class LockManager {
 
     showQueueDetails(lockName) {
         const lock = this.locks.find(l => l.name === lockName);
-        if (!lock || !lock.queue || lock.queue_type === 'none') {
+        if (!lock || lock.queue_type === 'none') {
             Utils.showAlert('Info', 'This lock has no queue configured.', 'info');
             return;
         }
 
-        const queueSize = lock.queue.size || 0;
+        const queueSize = lock.queue_size || 0;
 
         if (queueSize === 0) {
             Utils.showAlert('Info', `Queue for lock "${lockName}" is currently empty.`, 'info');

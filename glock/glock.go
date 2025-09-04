@@ -26,6 +26,7 @@ type Lock struct {
 
 type Glock struct {
 	ServerURL  string
+	Owner      string
 	ID         string
 	Locks      sync.Map
 	httpClient *http.Client
@@ -69,19 +70,20 @@ type PollRequest struct {
 }
 
 // Connect creates a new Glock client with default configuration
-func Connect(serverURL string) (*Glock, error) {
+func Connect(serverURL string, owner string) (*Glock, error) {
 	config := DefaultClientConfig(serverURL)
-	return ConnectWithConfig(config)
+	return ConnectWithConfig(config, owner)
 }
 
 // ConnectWithConfig creates a new Glock client with custom configuration
-func ConnectWithConfig(config *ClientConfig) (*Glock, error) {
+func ConnectWithConfig(config *ClientConfig, owner string) (*Glock, error) {
 	if config.ServerURL == "" {
 		return nil, fmt.Errorf("server URL must not be empty")
 	}
 
 	return &Glock{
 		ServerURL:  config.ServerURL,
+		Owner:      owner,
 		ID:         uuid.NewString(),
 		httpClient: config.HTTPClient,
 	}, nil
@@ -127,11 +129,11 @@ func (g *Glock) GetLockByName(name string) (*Lock, bool) {
 }
 
 // Acquire requests a lock from the glock-server and returns a Lock instance
-func (g *Glock) Acquire(lockName, owner string) (*Lock, error) {
+func (g *Glock) Acquire(lockName string) (*Lock, error) {
 	queueRequest := false
 	acquireReq := AcquireRequest{
 		Name:         lockName,
-		Owner:        owner,
+		Owner:        g.Owner,
 		OwnerID:      g.ID,
 		QueueRequest: &queueRequest,
 	}
@@ -252,11 +254,11 @@ func (g *Glock) CreateLockWithMetadata(name string, ttl, maxTTL string, queueTyp
 }
 
 // AcquireOrQueue attempts to acquire a lock, returning either the lock or queue info
-func (g *Glock) AcquireOrQueue(lockName, owner string) (*Lock, *QueueResponse, error) {
+func (g *Glock) AcquireOrQueue(lockName string) (*Lock, *QueueResponse, error) {
 	queueRequest := true
 	acquireReq := AcquireRequest{
 		Name:         lockName,
-		Owner:        owner,
+		Owner:        g.Owner,
 		OwnerID:      g.ID,
 		QueueRequest: &queueRequest,
 	}
@@ -445,9 +447,9 @@ func (g *Glock) RemoveFromQueue(lockName, requestID string) error {
 }
 
 // AcquireOrWait attempts to acquire a lock, waiting up to the specified timeout if queued
-func (g *Glock) AcquireOrWait(lockName, owner string, timeout time.Duration) (*Lock, error) {
+func (g *Glock) AcquireOrWait(lockName string, timeout time.Duration) (*Lock, error) {
 	// First try to acquire or queue
-	lock, queueResp, err := g.AcquireOrQueue(lockName, owner)
+	lock, queueResp, err := g.AcquireOrQueue(lockName)
 	if err != nil {
 		return nil, err
 	}

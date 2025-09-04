@@ -445,6 +445,9 @@ func StatusHandler(c *gin.Context, g *GlockServer) {
 	locks := make([]*Lock, 0)
 	g.Locks.Range(func(key, value any) bool {
 		if lock, ok := value.(*Lock); ok {
+			lock.mu.Lock()
+			lock.QueueSize = lock.getCurrentQueueSize()
+			lock.mu.Unlock()
 			locks = append(locks, lock)
 		}
 		return true
@@ -589,4 +592,38 @@ func UnfreezeLockHandler(c *gin.Context, g *GlockServer) {
 
 	lock.Frozen = false
 	c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock unfrozen successfully"})
+}
+
+// MetricsHandler handles the /metrics/:name route.
+// @Summary Get lock metrics
+// @Description Get comprehensive metrics for a specific lock
+// @Tags metrics
+// @Accept json
+// @Produce json
+// @Param name path string true "Lock name"
+// @Success 200 {object} MetricsResponse
+// @Failure 404 {object} map[string]string
+// @Router /metrics/{name} [get]
+func MetricsHandler(c *gin.Context, g *GlockServer) {
+	lockName := c.Param("name")
+	if lockName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lock name is required"})
+		return
+	}
+
+	lockVal, exists := g.Locks.Load(lockName)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
+		return
+	}
+
+	lock := lockVal.(*Lock)
+	metrics := lock.GetMetrics()
+
+	response := MetricsResponse{
+		LockName: lockName,
+		Metrics:  metrics,
+	}
+
+	c.JSON(http.StatusOK, response)
 }

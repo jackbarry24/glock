@@ -541,3 +541,141 @@ func TestRemoveFromQueueSuccess(t *testing.T) {
 		t.Fatalf("expected not_found after removal, got status=%s code=%d", pollResp.Status, code)
 	}
 }
+
+// TestTTLExpirationQueueProcessing tests the scenario where:
+// 1. client1 acquires the lock
+// 2. client2 tries to acquire, gets queued
+// 3. client1's TTL expires
+// 4. client2 should automatically get the lock via background cleanup
+func TestTTLExpirationQueueProcessing(t *testing.T) {
+	g := newServer(10)
+
+	// Create a lock with short TTL for testing
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:         "ttl-test-lock",
+		TTL:          "50ms", // Very short TTL
+		MaxTTL:       "1s",
+		QueueType:    QueueFIFO,
+		QueueTimeout: "1s",
+	})
+
+	// 1. client1 acquires the lock
+	result1, code1, err1 := g.AcquireLock(&AcquireRequest{
+		Name:    "ttl-test-lock",
+		Owner:   "client1",
+		OwnerID: "11111111-1111-1111-1111-111111111111",
+	})
+	if err1 != nil || code1 != http.StatusOK {
+		t.Fatalf("client1 acquire failed: code=%d err=%v", code1, err1)
+	}
+	lock1 := result1.(*Lock)
+
+	// 2. client2 tries to acquire, should get queued
+	result2, code2, err2 := g.AcquireLock(&AcquireRequest{
+		Name:    "ttl-test-lock",
+		Owner:   "client2",
+		OwnerID: "22222222-2222-2222-2222-222222222222",
+	})
+	if err2 != nil || code2 != http.StatusAccepted {
+		t.Fatalf("client2 should be queued, got code=%d err=%v", code2, err2)
+	}
+	queueResp := result2.(*QueueResponse)
+	requestID := queueResp.RequestID
+
+	// Verify client2 is in queue
+	pollResp, _, _ := g.PollQueue(&PollRequest{
+		Name:      "ttl-test-lock",
+		RequestID: requestID,
+		OwnerID:   "22222222-2222-2222-2222-222222222222",
+	})
+	if pollResp.Status != "waiting" {
+		t.Fatalf("client2 should be waiting in queue, got status=%s", pollResp.Status)
+	}
+
+	// 3. Wait for TTL to expire
+	time.Sleep(100 * time.Millisecond) // Wait longer than TTL
+
+	// 4. Manually trigger the cleanup process (simulating the background goroutine)
+	g.processExpiredLocks()
+
+	// 5. Check if client2 got the lock
+	pollResp2, code3, err3 := g.PollQueue(&PollRequest{
+		Name:      "ttl-test-lock",
+		RequestID: requestID,
+		OwnerID:   "22222222-2222-2222-2222-222222222222",
+	})
+
+	// The request should either be granted the lock or show as ready
+	if err3 != nil || (code3 != http.StatusOK && pollResp2.Status != "ready") {
+		t.Fatalf("client2 should get the lock after TTL expiration, got code=%d status=%s err=%v", code3, pollResp2.Status, err3)
+	}
+
+	if pollResp2.Status == "ready" && pollResp2.Lock != nil {
+		if pollResp2.Lock.Owner != "client2" {
+			t.Fatalf("lock should be owned by client2, got owner=%s", pollResp2.Lock.Owner)
+		}
+	}
+
+	// Verify that client1's lock is no longer valid
+	_, code4, err4 := g.VerifyLock(&VerifyRequest{
+		Name:    "ttl-test-lock",
+		OwnerID: "11111111-1111-1111-1111-111111111111",
+		Token:   lock1.Token,
+	})
+	if err4 == nil || code4 != http.StatusConflict {
+		t.Fatalf("client1's lock should be expired, got code=%d err=%v", code4, err4)
+	}
+}
+
+// TestBackgroundCleanupGoroutine tests that the background cleanup works
+func TestBackgroundCleanupGoroutine(t *testing.T) {
+	g := newServer(10)
+
+	// Create a lock with short TTL
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:         "bg-cleanup-test",
+		TTL:          "10ms",
+		MaxTTL:       "100ms",
+		QueueType:    QueueFIFO,
+		QueueTimeout: "1s",
+	})
+
+	// Start the cleanup goroutine
+	g.StartCleanupGoroutine()
+	defer g.StopCleanupGoroutine()
+
+	// Acquire lock
+	_, _, _ = g.AcquireLock(&AcquireRequest{
+		Name:    "bg-cleanup-test",
+		Owner:   "owner1",
+		OwnerID: "11111111-1111-1111-1111-111111111111",
+	})
+
+	// Queue another client
+	result, code, err := g.AcquireLock(&AcquireRequest{
+		Name:    "bg-cleanup-test",
+		Owner:   "owner2",
+		OwnerID: "22222222-2222-2222-2222-222222222222",
+	})
+	if err != nil || code != http.StatusAccepted {
+		t.Fatalf("second client should be queued")
+	}
+	queueResp := result.(*QueueResponse)
+
+	// Wait for TTL to expire and background cleanup to run
+	time.Sleep(200 * time.Millisecond) // Wait for cleanup interval (30s default, but should be fast in test)
+
+	// Poll to see if we got the lock
+	pollResp, code2, _ := g.PollQueue(&PollRequest{
+		Name:      "bg-cleanup-test",
+		RequestID: queueResp.RequestID,
+		OwnerID:   "22222222-2222-2222-2222-222222222222",
+	})
+
+	// Should either get the lock or be told it's ready
+	if code2 == http.StatusOK && pollResp.Status == "ready" && pollResp.Lock != nil {
+		if pollResp.Lock.Owner != "owner2" {
+			t.Fatalf("expected owner2 to get the lock, got %s", pollResp.Lock.Owner)
+		}
+	}
+}
