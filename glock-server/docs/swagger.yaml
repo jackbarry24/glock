@@ -111,6 +111,9 @@ definitions:
       owner_id:
         example: uuid-123
         type: string
+      queue_size:
+        example: 0
+        type: integer
       queue_timeout:
         example: 1m
         type: string
@@ -123,6 +126,86 @@ definitions:
         type: integer
       ttl:
         example: 30s
+        type: string
+    type: object
+  core.LockMetrics:
+    properties:
+      average_hold_time:
+        type: string
+      average_queue_wait_time:
+        type: string
+      created_at:
+        description: Time-based metrics
+        type: string
+      current_hold_time:
+        type: string
+      current_queue_size:
+        description: Queue Statistics
+        type: integer
+      failed_acquires:
+        type: integer
+      failed_operations:
+        description: Error Statistics
+        type: integer
+      heartbeat_count:
+        type: integer
+      last_activity_at:
+        type: string
+      max_hold_time:
+        type: string
+      max_queue_wait_time:
+        type: string
+      max_ttl_expiration_count:
+        type: integer
+      network_errors:
+        type: integer
+      owner_change_count:
+        description: Owner Statistics
+        type: integer
+      owner_history:
+        description: Owner history (keep last N owners for trending)
+        items:
+          $ref: '#/definitions/core.OwnerRecord'
+        type: array
+      queue_timeout_count:
+        type: integer
+      refresh_count:
+        type: integer
+      stale_token_errors:
+        type: integer
+      successful_acquires:
+        type: integer
+      total_acquire_attempts:
+        description: Usage Statistics
+        type: integer
+      total_hold_time:
+        type: string
+      total_queued_requests:
+        type: integer
+      ttl_expiration_count:
+        description: TTL/Expiration Statistics
+        type: integer
+      unique_owners_count:
+        type: integer
+    type: object
+  core.MetricsResponse:
+    properties:
+      lock_name:
+        type: string
+      metrics:
+        $ref: '#/definitions/core.LockMetrics'
+    type: object
+  core.OwnerRecord:
+    properties:
+      acquired_at:
+        type: string
+      hold_time:
+        type: string
+      owner:
+        type: string
+      owner_id:
+        type: string
+      released_at:
         type: string
     type: object
   core.PollRequest:
@@ -465,6 +548,33 @@ paths:
       summary: List all locks
       tags:
       - status
+  /metrics/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Get comprehensive metrics for a specific lock
+      parameters:
+      - description: Lock name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/core.MetricsResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get lock metrics
+      tags:
+      - metrics
   /poll:
     post:
       consumes:

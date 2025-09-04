@@ -29,11 +29,11 @@ build-all: build-server build-client
 # Test targets
 test-server:
 	@echo "Running server tests..."
-	cd glock-server && go test -v ./...
+	cd glock-server && go test -v ./... -count=1
 
 test-client:
 	@echo "Running client tests..."
-	cd glock && go test -v ./...
+	cd glock && go test -v ./... -count=1
 
 test-all: test-server test-client
 

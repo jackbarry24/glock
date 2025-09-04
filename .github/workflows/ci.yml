@@ -41,8 +41,3 @@ jobs:
       - name: Test
         working-directory: glock-server
         run: go test -v ./...
-      - name: Generate OpenAPI spec
-        working-directory: glock-server
-        run: |
-          go install github.com/swaggo/swag/cmd/swag@latest
-          swag init -g cmd/main.go -o docs/

@@ -129,16 +129,16 @@ type LockMetrics struct {
 	TotalAcquireAttempts int64         `json:"total_acquire_attempts"`
 	SuccessfulAcquires   int64         `json:"successful_acquires"`
 	FailedAcquires       int64         `json:"failed_acquires"`
-	CurrentHoldTime      time.Duration `json:"current_hold_time"`
-	TotalHoldTime        time.Duration `json:"total_hold_time"`
-	AverageHoldTime      time.Duration `json:"average_hold_time"`
-	MaxHoldTime          time.Duration `json:"max_hold_time"`
+	CurrentHoldTime      time.Duration `json:"current_hold_time" swaggertype:"string"`
+	TotalHoldTime        time.Duration `json:"total_hold_time" swaggertype:"string"`
+	AverageHoldTime      time.Duration `json:"average_hold_time" swaggertype:"string"`
+	MaxHoldTime          time.Duration `json:"max_hold_time" swaggertype:"string"`
 
 	// Queue Statistics
 	CurrentQueueSize     int64         `json:"current_queue_size"`
 	TotalQueuedRequests  int64         `json:"total_queued_requests"`
-	AverageQueueWaitTime time.Duration `json:"average_queue_wait_time"`
-	MaxQueueWaitTime     time.Duration `json:"max_queue_wait_time"`
+	AverageQueueWaitTime time.Duration `json:"average_queue_wait_time" swaggertype:"string"`
+	MaxQueueWaitTime     time.Duration `json:"max_queue_wait_time" swaggertype:"string"`
 	QueueTimeoutCount    int64         `json:"queue_timeout_count"`
 
 	// TTL/Expiration Statistics
@@ -170,7 +170,7 @@ type OwnerRecord struct {
 	OwnerID    string        `json:"owner_id"`
 	AcquiredAt time.Time     `json:"acquired_at"`
 	ReleasedAt *time.Time    `json:"released_at,omitempty"`
-	HoldTime   time.Duration `json:"hold_time"`
+	HoldTime   time.Duration `json:"hold_time" swaggertype:"string"`
 }
 
 // MetricsResponse represents the response containing lock metrics

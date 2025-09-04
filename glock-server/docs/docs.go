@@ -332,6 +332,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/metrics/{name}": {
+            "get": {
+                "description": "Get comprehensive metrics for a specific lock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Get lock metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lock name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.MetricsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/poll": {
             "post": {
                 "description": "Check the status of a queued lock acquisition request",
@@ -911,6 +952,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "uuid-123"
                 },
+                "queue_size": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "queue_timeout": {
                     "type": "string",
                     "example": "1m"
@@ -930,6 +975,124 @@ const docTemplate = `{
                 "ttl": {
                     "type": "string",
                     "example": "30s"
+                }
+            }
+        },
+        "core.LockMetrics": {
+            "type": "object",
+            "properties": {
+                "average_hold_time": {
+                    "type": "string"
+                },
+                "average_queue_wait_time": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "Time-based metrics",
+                    "type": "string"
+                },
+                "current_hold_time": {
+                    "type": "string"
+                },
+                "current_queue_size": {
+                    "description": "Queue Statistics",
+                    "type": "integer"
+                },
+                "failed_acquires": {
+                    "type": "integer"
+                },
+                "failed_operations": {
+                    "description": "Error Statistics",
+                    "type": "integer"
+                },
+                "heartbeat_count": {
+                    "type": "integer"
+                },
+                "last_activity_at": {
+                    "type": "string"
+                },
+                "max_hold_time": {
+                    "type": "string"
+                },
+                "max_queue_wait_time": {
+                    "type": "string"
+                },
+                "max_ttl_expiration_count": {
+                    "type": "integer"
+                },
+                "network_errors": {
+                    "type": "integer"
+                },
+                "owner_change_count": {
+                    "description": "Owner Statistics",
+                    "type": "integer"
+                },
+                "owner_history": {
+                    "description": "Owner history (keep last N owners for trending)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.OwnerRecord"
+                    }
+                },
+                "queue_timeout_count": {
+                    "type": "integer"
+                },
+                "refresh_count": {
+                    "type": "integer"
+                },
+                "stale_token_errors": {
+                    "type": "integer"
+                },
+                "successful_acquires": {
+                    "type": "integer"
+                },
+                "total_acquire_attempts": {
+                    "description": "Usage Statistics",
+                    "type": "integer"
+                },
+                "total_hold_time": {
+                    "type": "string"
+                },
+                "total_queued_requests": {
+                    "type": "integer"
+                },
+                "ttl_expiration_count": {
+                    "description": "TTL/Expiration Statistics",
+                    "type": "integer"
+                },
+                "unique_owners_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "core.MetricsResponse": {
+            "type": "object",
+            "properties": {
+                "lock_name": {
+                    "type": "string"
+                },
+                "metrics": {
+                    "$ref": "#/definitions/core.LockMetrics"
+                }
+            }
+        },
+        "core.OwnerRecord": {
+            "type": "object",
+            "properties": {
+                "acquired_at": {
+                    "type": "string"
+                },
+                "hold_time": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
                 }
             }
         },
