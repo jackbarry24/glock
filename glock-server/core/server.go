@@ -239,9 +239,12 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
+	// Use consistent timestamp throughout the method
+	now := time.Now()
+
 	// Clean expired queue entries first (now protected by mutex)
 	if lock.queue != nil {
-		lock.queue.CleanExpired(time.Now())
+		lock.queue.CleanExpired(now)
 	}
 
 	// Check if lock is frozen
@@ -250,7 +253,6 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	}
 
 	// Check if lock can be acquired (available or expired)
-	now := time.Now()
 	canAcquire := lock.OwnerID == "" || // Never owned
 		lock.Available || // Explicitly available
 		now.After(lock.AcquiredAt.Add(lock.MaxTTL)) || // MaxTTL expired
@@ -293,8 +295,8 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 		Name:      req.Name,
 		Owner:     req.Owner,
 		OwnerID:   req.OwnerID,
-		QueuedAt:  time.Now(),
-		TimeoutAt: time.Now().Add(lock.QueueTimeout),
+		QueuedAt:  now,
+		TimeoutAt: now.Add(lock.QueueTimeout),
 	}
 
 	isLIFO := lock.QueueType == QueueLIFO
@@ -314,15 +316,14 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 			lock.queue.Dequeue()
 			lock.Owner = req.Owner
 			lock.OwnerID = req.OwnerID
-			acquiredAt := time.Now()
-			lock.AcquiredAt = acquiredAt
-			lock.LastRefresh = acquiredAt
+			lock.AcquiredAt = now
+			lock.LastRefresh = now
 			lock.Available = false
 			lock.Token++
 
 			// Update metrics
 			lock.recordAcquireAttempt(true)
-			lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt)
+			lock.recordOwnerChange(req.Owner, req.OwnerID, now)
 			lock.recordQueueTimeout() // Remove from queue count since we're processing it
 
 			return lock, http.StatusOK, nil
@@ -347,9 +348,12 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
+	// Use consistent timestamp throughout the method
+	now := time.Now()
+
 	// Clean expired queue entries (but not in PollQueue to allow detection of expired requests)
 	// if lock.queue != nil {
-	// 	lock.queue.CleanExpired(time.Now())
+	// 	lock.queue.CleanExpired(now)
 	// }
 
 	// Check if the lock is already assigned to this requester (happened in ReleaseLock)
@@ -365,7 +369,7 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 		nextReq := lock.queue.GetNext()
 		if nextReq != nil && nextReq.ID == req.RequestID && nextReq.OwnerID == req.OwnerID {
 			// Check if the request has expired
-			if time.Now().After(nextReq.TimeoutAt) {
+			if now.After(nextReq.TimeoutAt) {
 				// Request expired, remove it and return expired
 				lock.queue.Remove(req.RequestID)
 				return &PollResponse{Status: "expired"}, http.StatusGone, nil
@@ -376,8 +380,8 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 
 			lock.Owner = nextReq.Owner
 			lock.OwnerID = nextReq.OwnerID
-			lock.AcquiredAt = time.Now()
-			lock.LastRefresh = time.Now()
+			lock.AcquiredAt = now
+			lock.LastRefresh = now
 			lock.Available = false
 			lock.Token++
 
@@ -396,7 +400,7 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 			position := lock.queue.GetPosition(req.RequestID)
 
 			// Check if our request has expired
-			if time.Now().After(queueReq.TimeoutAt) {
+			if now.After(queueReq.TimeoutAt) {
 				lock.queue.Remove(req.RequestID)
 				return &PollResponse{Status: "expired"}, http.StatusGone, nil
 			}
@@ -598,6 +602,10 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 	lock := lockVal.(*Lock)
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
+
+	// Use consistent timestamp throughout the method
+	now := time.Now()
+
 	if lock.OwnerID != req.OwnerID {
 		lock.recordFailedOperation()
 		return false, http.StatusConflict, fmt.Errorf("lock is held by another owner")
@@ -615,7 +623,7 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 			// Peek at the front of the queue
 			if front := lock.queue.list.Front(); front != nil {
 				candidate := front.Value.(*QueueRequest)
-				if time.Now().Before(candidate.TimeoutAt) {
+				if now.Before(candidate.TimeoutAt) {
 					// Request is not expired, dequeue it
 					nextOwner = lock.queue.Dequeue()
 				}
@@ -647,17 +655,16 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 
 	// If there's someone in queue, immediately assign the lock to them
 	if nextOwner != nil {
-		acquiredAt := time.Now()
 		newLock.Owner = nextOwner.Owner
 		newLock.OwnerID = nextOwner.OwnerID
-		newLock.AcquiredAt = acquiredAt
-		newLock.LastRefresh = acquiredAt
+		newLock.AcquiredAt = now
+		newLock.LastRefresh = now
 		newLock.Available = false
 		newLock.Token++
 
 		// Record metrics for new owner
 		newLock.recordAcquireAttempt(true)
-		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt)
+		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, now)
 		newLock.recordQueueTimeout() // Remove from queue count since it's being processed
 	}
 

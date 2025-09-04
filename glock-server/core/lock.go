@@ -33,7 +33,6 @@ type Lock struct {
 type LockQueue struct {
 	requests map[string]*list.Element // requestID -> list element
 	list     *list.List               // doubly linked list for FIFO/LIFO
-	mu       sync.RWMutex             `json:"-"`
 }
 
 // NewLockQueue creates a new queue for lock requests
@@ -46,9 +45,6 @@ func NewLockQueue() *LockQueue {
 
 // Enqueue adds a request to the queue
 func (q *LockQueue) Enqueue(req *QueueRequest, isLIFO bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	element := q.list.PushBack(req)
 	if isLIFO {
 		// For LIFO, move to front
@@ -59,9 +55,6 @@ func (q *LockQueue) Enqueue(req *QueueRequest, isLIFO bool) {
 
 // Dequeue removes and returns the next request
 func (q *LockQueue) Dequeue() *QueueRequest {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	if q.list.Len() == 0 {
 		return nil
 	}
@@ -75,9 +68,6 @@ func (q *LockQueue) Dequeue() *QueueRequest {
 
 // Remove removes a specific request by ID
 func (q *LockQueue) Remove(requestID string) *QueueRequest {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	element, exists := q.requests[requestID]
 	if !exists {
 		return nil
@@ -90,9 +80,6 @@ func (q *LockQueue) Remove(requestID string) *QueueRequest {
 
 // GetPosition returns the position of a request in the queue (1-based)
 func (q *LockQueue) GetPosition(requestID string) int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-
 	element, exists := q.requests[requestID]
 	if !exists {
 		return -1
@@ -110,9 +97,6 @@ func (q *LockQueue) GetPosition(requestID string) int {
 
 // GetNext returns the next request without removing it
 func (q *LockQueue) GetNext() *QueueRequest {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-
 	if q.list.Len() == 0 {
 		return nil
 	}
@@ -123,8 +107,6 @@ func (q *LockQueue) GetNext() *QueueRequest {
 
 // Size returns the current queue size
 func (q *LockQueue) Size() int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
 	return q.list.Len()
 }
 
@@ -132,9 +114,6 @@ func (q *LockQueue) Size() int {
 // Only removes requests that have been expired for more than 5 seconds
 // to allow polling to detect recently expired requests
 func (q *LockQueue) CleanExpired(now time.Time) int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	removed := 0
 	gracePeriod := 5 * time.Second // Allow recently expired requests to be detected
 
@@ -397,7 +376,5 @@ func (l *Lock) getCurrentQueueSize() int {
 		return 0
 	}
 
-	l.queue.mu.RLock()
-	defer l.queue.mu.RUnlock()
 	return l.queue.list.Len()
 }
