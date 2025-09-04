@@ -1,9 +1,11 @@
 package glock
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -436,6 +438,7 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 	// Launch multiple clients trying to acquire concurrently
 	const numClients = 5
 	results := make(chan *acquireResult, numClients)
+	var locksToRelease []*Lock
 
 	for i := 0; i < numClients; i++ {
 		go func(clientID int) {
@@ -453,6 +456,8 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 		result := <-results
 		if result.err == nil {
 			successfulAcquires++
+			locksToRelease = append(locksToRelease, result.lock)
+
 			// Verify the successful client owns the lock
 			serverLockVal, _ := server.Core().Locks.Load("concurrent-test")
 			serverLock := serverLockVal.(*core.Lock)
@@ -460,26 +465,231 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 			if serverLock.Owner != expectedOwner {
 				t.Errorf("server shows wrong owner: expected %s, got %s", expectedOwner, serverLock.Owner)
 			}
-			// Release the lock for next client
-			result.lock.Release()
 		} else {
 			failedAcquires++
 		}
 	}
 
-	// Exactly one client should have succeeded
+	// Clean up: release all locks that were acquired
+	for _, lock := range locksToRelease {
+		if lock != nil {
+			err := lock.Release()
+			if err != nil {
+				t.Logf("Warning: failed to release lock: %v", err)
+			}
+		}
+	}
+
+	// Verify exactly one client succeeded
 	if successfulAcquires != 1 {
 		t.Fatalf("expected exactly 1 successful acquire, got %d", successfulAcquires)
 	}
 	if failedAcquires != numClients-1 {
 		t.Fatalf("expected %d failed acquires, got %d", numClients-1, failedAcquires)
 	}
+
+	// Additional verification: ensure server shows lock as available after releases
+	time.Sleep(10 * time.Millisecond) // Allow time for release to propagate
+	serverLockVal, _ := server.Core().Locks.Load("concurrent-test")
+	serverLock := serverLockVal.(*core.Lock)
+	if !serverLock.Available {
+		t.Errorf("lock should be available after all releases, but owner is %s", serverLock.Owner)
+	}
+}
+
+// TestServerSideRaceCondition tests for race conditions in the server AcquireLock method
+func TestServerSideRaceCondition(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	// Create lock directly
+	_, _, err := server.Core().CreateLock(&core.CreateRequest{
+		Name:   "race-test",
+		TTL:    "30s",
+		MaxTTL: "5m",
+	})
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	// Test concurrent calls to AcquireLock method directly (bypassing HTTP)
+	const numConcurrent = 10
+	var wg sync.WaitGroup
+	results := make(chan *testAcquireResult, numConcurrent)
+
+	wg.Add(numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		go func(clientID int) {
+			defer wg.Done()
+
+			req := &core.AcquireRequest{
+				Name:         "race-test",
+				Owner:        fmt.Sprintf("client-%d", clientID),
+				OwnerID:      fmt.Sprintf("uuid-%d", clientID),
+				QueueRequest: &[]bool{false}[0], // Don't queue
+			}
+
+			// Call AcquireLock directly
+			result, code, err := server.Core().AcquireLock(req)
+			results <- &testAcquireResult{
+				result:   result,
+				code:     code,
+				err:      err,
+				clientID: clientID,
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(results)
+
+	// Analyze results
+	successCount := 0
+	failureCount := 0
+	queuedCount := 0
+	var successfulClients []int
+	var failedClients []int
+
+	for res := range results {
+		t.Logf("Client %d: code=%d, err=%v", res.clientID, res.code, res.err)
+		if res.err == nil && res.code == 200 {
+			successCount++
+			successfulClients = append(successfulClients, res.clientID)
+		} else if res.code == 202 { // Queued
+			queuedCount++
+		} else {
+			failureCount++
+			failedClients = append(failedClients, res.clientID)
+		}
+	}
+
+	t.Logf("Summary: %d successful, %d queued, %d failed", successCount, queuedCount, failureCount)
+
+	// Exactly one should succeed
+	if successCount != 1 {
+		t.Errorf("Server race condition: expected 1 successful acquisition, got %d", successCount)
+		for _, clientID := range successfulClients {
+			t.Logf("Successful client: %d", clientID)
+		}
+	}
+
+	// All requests should have some result
+	totalResults := successCount + queuedCount + failureCount
+	if totalResults != numConcurrent {
+		t.Errorf("Expected %d total results, got %d (success:%d + queued:%d + failed:%d)",
+			numConcurrent, totalResults, successCount, queuedCount, failureCount)
+	}
+}
+
+type testAcquireResult struct {
+	result   interface{}
+	code     int
+	err      error
+	clientID int
 }
 
 type acquireResult struct {
 	lock     *Lock
 	err      error
 	clientID int
+}
+
+// TestHTTPClientRaceCondition tests for race conditions at the HTTP client level
+func TestHTTPClientRaceCondition(t *testing.T) {
+	server := NewTestServer(t)
+	defer server.Close()
+
+	// Create lock
+	_, _, err := server.Core().CreateLock(&core.CreateRequest{
+		Name:   "http-race-test",
+		TTL:    "30s",
+		MaxTTL: "5m",
+	})
+	if err != nil {
+		t.Fatalf("failed to create lock: %v", err)
+	}
+
+	const numConcurrent = 5
+	var wg sync.WaitGroup
+	results := make(chan *httpTestResult, numConcurrent)
+
+	wg.Add(numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		go func(clientID int) {
+			defer wg.Done()
+			client, _ := Connect(server.URL(), fmt.Sprintf("client-%d", clientID))
+
+			// Manually make the HTTP request to capture response details
+			queueRequest := false
+			acquireReq := AcquireRequest{
+				Name:         "http-race-test",
+				Owner:        client.Owner,
+				OwnerID:      client.ID,
+				QueueRequest: &queueRequest,
+			}
+			body, _ := json.Marshal(acquireReq)
+
+			resp, httpErr := client.getHTTPClient().Post(client.ServerURL+"/api/acquire", "application/json", bytes.NewBuffer(body))
+			if httpErr != nil {
+				results <- &httpTestResult{clientID: clientID, httpErr: httpErr}
+				return
+			}
+			defer resp.Body.Close()
+
+			// Read the raw response body
+			respBody, _ := io.ReadAll(resp.Body)
+			t.Logf("Client %d: HTTP %d, Body: %s", clientID, resp.StatusCode, string(respBody))
+
+			// Try to parse as normal response
+			var acquireResp AcquireResponse
+			if jsonErr := json.Unmarshal(respBody, &acquireResp); jsonErr != nil {
+				results <- &httpTestResult{clientID: clientID, jsonErr: jsonErr, statusCode: resp.StatusCode, rawBody: string(respBody)}
+				return
+			}
+
+			results <- &httpTestResult{
+				clientID:   clientID,
+				statusCode: resp.StatusCode,
+				lock:       acquireResp.Lock,
+				rawBody:    string(respBody),
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(results)
+
+	// Analyze results
+	successCount := 0
+	var successfulClients []int
+
+	for res := range results {
+		t.Logf("Client %d result: status=%d, lock=%v, httpErr=%v, jsonErr=%v",
+			res.clientID, res.statusCode, res.lock != nil, res.httpErr, res.jsonErr)
+
+		if res.httpErr == nil && res.jsonErr == nil && res.statusCode == 200 && res.lock != nil {
+			successCount++
+			successfulClients = append(successfulClients, res.clientID)
+		}
+	}
+
+	t.Logf("Total successful acquisitions: %d", successCount)
+	for _, clientID := range successfulClients {
+		t.Logf("Successful client: %d", clientID)
+	}
+
+	if successCount != 1 {
+		t.Errorf("HTTP race condition: expected 1 successful acquisition, got %d", successCount)
+	}
+}
+
+type httpTestResult struct {
+	clientID   int
+	statusCode int
+	lock       *Lock
+	httpErr    error
+	jsonErr    error
+	rawBody    string
 }
 
 // TestIntegrationNewFeatures tests all newly added client features end-to-end

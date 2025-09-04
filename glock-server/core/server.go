@@ -236,21 +236,28 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	}
 	lock := lockVal.(*Lock)
 
-	// Clean expired queue entries first
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	// Clean expired queue entries first (now protected by mutex)
 	if lock.queue != nil {
 		lock.queue.CleanExpired(time.Now())
 	}
-
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
 
 	// Check if lock is frozen
 	if lock.Frozen {
 		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be acquired", req.Name)
 	}
 
-	if lock.IsAvailable() {
-		// Lock is available, acquire it immediately
+	// Check if lock can be acquired (available or expired)
+	now := time.Now()
+	canAcquire := lock.OwnerID == "" || // Never owned
+		lock.Available || // Explicitly available
+		now.After(lock.AcquiredAt.Add(lock.MaxTTL)) || // MaxTTL expired
+		now.After(lock.LastRefresh.Add(lock.TTL)) // TTL expired
+
+	if canAcquire {
+		// Lock can be acquired, do it immediately
 		lock.Owner = req.Owner
 		lock.OwnerID = req.OwnerID
 		acquiredAt := time.Now()

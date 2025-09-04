@@ -167,6 +167,15 @@ func (l *Lock) IsAvailable() bool {
 	return l.Available
 }
 
+// isExpired checks if the lock has expired but doesn't modify state
+func (l *Lock) isExpired() bool {
+	if l.OwnerID == "" {
+		return false
+	}
+	now := time.Now()
+	return now.After(l.AcquiredAt.Add(l.MaxTTL)) || now.After(l.LastRefresh.Add(l.TTL))
+}
+
 func (l *Lock) GetOwner() string {
 	if l.Owner != "" {
 		return l.Owner
