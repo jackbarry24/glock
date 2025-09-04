@@ -19,7 +19,7 @@ This repo contains:
 
   // Queue usage - Manual polling
   err := g.CreateLock("queued-lock", "30s", "5m", glock.QueueFIFO, "2m")
-  lock, queueResp, err := g.AcquireOrQueue("queued-lock", "worker-1")
+  lock, queueResp, err := g.AcquireOrQueue("queued-lock")
   if queueResp != nil {
     // Lock is queued, poll for status
     for {
@@ -33,7 +33,7 @@ This repo contains:
   }
 
   // OR use the convenient AcquireOrWait method
-  lock, err := g.AcquireOrWait("queued-lock", "worker-1", 30*time.Second)
+  lock, err := g.AcquireOrWait("queued-lock", 30*time.Second)
   if lock != nil {
     lock.StartHeartbeat()
     // work ...

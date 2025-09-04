@@ -15,10 +15,10 @@ _ = l.Release()
 ```
 
 ### API
-- `Connect(serverURL string) (*Glock, error)`
-- `(*Glock) Acquire(name, owner string) (*Lock, error)` - Immediate acquisition or fail
-- `(*Glock) AcquireOrQueue(name, owner string) (*Lock, *QueueResponse, error)` - Acquire or queue
-- `(*Glock) AcquireOrWait(name, owner string, timeout time.Duration) (*Lock, error)` - Acquire with timeout
+- `Connect(serverURL string, owner string) (*Glock, error)`
+- `(*Glock) Acquire(name) (*Lock, error)` - Immediate acquisition or fail
+- `(*Glock) AcquireOrQueue(name) (*Lock, *QueueResponse, error)` - Acquire or queue
+- `(*Glock) AcquireOrWait(name, timeout time.Duration) (*Lock, error)` - Acquire with timeout
 - `(*Glock) PollQueue(name, requestID string) (*PollResponse, error)` - Check queue status
 - `(*Glock) RemoveFromQueue(name, requestID string) error` - Remove queued request
 - `(*Lock) StartHeartbeat()`
