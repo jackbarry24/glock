@@ -146,15 +146,6 @@ func (l *Lock) IsAvailable() bool {
 	return l.Available
 }
 
-// isExpired checks if the lock has expired but doesn't modify state
-func (l *Lock) isExpired() bool {
-	if l.OwnerID == "" {
-		return false
-	}
-	now := time.Now()
-	return now.After(l.AcquiredAt.Add(l.MaxTTL)) || now.After(l.LastRefresh.Add(l.TTL))
-}
-
 func (l *Lock) GetOwner() string {
 	if l.Owner != "" {
 		return l.Owner
@@ -318,15 +309,6 @@ func (l *Lock) recordRefresh() {
 
 	atomic.AddInt64(&l.metrics.RefreshCount, 1)
 	l.metrics.LastActivityAt = time.Now()
-}
-
-// recordHeartbeat records a heartbeat
-func (l *Lock) recordHeartbeat() {
-	if l.metrics == nil {
-		return
-	}
-
-	atomic.AddInt64(&l.metrics.HeartbeatCount, 1)
 }
 
 // recordTTLExpiration records a TTL expiration

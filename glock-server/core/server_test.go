@@ -531,7 +531,7 @@ func TestRemoveFromQueueSuccess(t *testing.T) {
 	}
 
 	// Verify it's actually removed by trying to poll for it
-	pollResp, code, err := g.PollQueue(&PollRequest{
+	pollResp, code, _ := g.PollQueue(&PollRequest{
 		Name:      "remove-test-lock",
 		RequestID: "test-request-id",
 		OwnerID:   "second-owner-id",
