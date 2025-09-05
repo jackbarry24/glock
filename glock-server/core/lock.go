@@ -223,7 +223,7 @@ func (l *Lock) recordQueueTimeout() {
 }
 
 // recordOwnerChange records when ownership changes
-func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Time) {
+func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Time, maxSize int) {
 	if l.metrics == nil {
 		l.metrics = NewLockMetrics()
 	}
@@ -261,9 +261,9 @@ func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Ti
 	}
 	l.metrics.OwnerHistory = append(l.metrics.OwnerHistory, record)
 
-	// Keep only last 20 records to prevent unbounded growth
-	if len(l.metrics.OwnerHistory) > 20 {
-		l.metrics.OwnerHistory = l.metrics.OwnerHistory[len(l.metrics.OwnerHistory)-20:]
+	// Keep only last maxSize records to prevent unbounded growth
+	if len(l.metrics.OwnerHistory) > maxSize {
+		l.metrics.OwnerHistory = l.metrics.OwnerHistory[len(l.metrics.OwnerHistory)-maxSize:]
 	}
 }
 

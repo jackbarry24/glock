@@ -847,6 +847,28 @@
     font-size: 14px;
 }
 
+.pagination-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 12px 0;
+}
+
+.pagination-controls .btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-width: auto;
+}
+
+#owner-history-page-info {
+    font-size: 12px;
+    color: #666;
+    min-width: 80px;
+    text-align: center;
+}
+
 .owner-history-item {
     display: flex;
     justify-content: space-between;

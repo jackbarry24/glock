@@ -11,4 +11,10 @@ default_ttl: 30s
 default_max_ttl: 5m
 default_queue_timeout: 5m
 
+# Metrics configuration
+owner_history_max_size: 100
+
+# Queue configuration
+queue_max_size: 1024
+
 cleanup_interval: 5s

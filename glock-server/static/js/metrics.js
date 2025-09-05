@@ -5,6 +5,9 @@
 class MetricsManager {
     constructor() {
         this.currentLockName = null;
+        this.ownerHistoryPage = 1;
+        this.ownerHistoryPageSize = 10;
+        this.ownerHistoryData = [];
         this.init();
     }
 
@@ -21,6 +24,16 @@ class MetricsManager {
                     this.loadMetrics(this.currentLockName);
                 }
             });
+        }
+
+        // Pagination buttons
+        const prevBtn = document.getElementById('owner-history-prev');
+        const nextBtn = document.getElementById('owner-history-next');
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => this.changeOwnerHistoryPage(-1));
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => this.changeOwnerHistoryPage(1));
         }
 
         // Modal close events
@@ -52,6 +65,8 @@ class MetricsManager {
             modal.style.display = 'none';
         }
         this.currentLockName = null;
+        this.ownerHistoryPage = 1;
+        this.ownerHistoryData = [];
     }
 
     async loadMetrics(lockName) {
@@ -133,7 +148,9 @@ class MetricsManager {
         this.setMetricValue('metric-idle-time', this.formatTimeSince(metrics.last_activity_at));
 
         // Update owner history
-        this.displayOwnerHistory(metrics.owner_history || []);
+        this.ownerHistoryData = metrics.owner_history || [];
+        this.ownerHistoryPage = 1; // Reset to first page
+        this.displayOwnerHistory();
     }
 
     setMetricValue(elementId, value, cssClass = '') {
@@ -199,25 +216,33 @@ class MetricsManager {
         }
     }
 
-    displayOwnerHistory(ownerHistory) {
+    displayOwnerHistory() {
         const container = document.getElementById('owner-history-table');
+        const paginationEl = document.getElementById('owner-history-pagination');
 
         if (!container) return;
 
-        if (!ownerHistory || ownerHistory.length === 0) {
+        if (!this.ownerHistoryData || this.ownerHistoryData.length === 0) {
             container.innerHTML = '<div class="no-data">No ownership history available</div>';
+            if (paginationEl) paginationEl.style.display = 'none';
             return;
         }
 
         // Sort by acquired_at descending (most recent first)
-        const sortedHistory = [...ownerHistory].sort((a, b) =>
+        const sortedHistory = [...this.ownerHistoryData].sort((a, b) =>
             new Date(b.acquired_at) - new Date(a.acquired_at)
         );
 
-        // Take only the most recent 10 entries
-        const recentHistory = sortedHistory.slice(0, 10);
+        // Calculate pagination
+        const totalItems = sortedHistory.length;
+        const totalPages = Math.ceil(totalItems / this.ownerHistoryPageSize);
+        const startIndex = (this.ownerHistoryPage - 1) * this.ownerHistoryPageSize;
+        const endIndex = Math.min(startIndex + this.ownerHistoryPageSize, totalItems);
 
-        const html = recentHistory.map(record => `
+        // Get current page items
+        const currentPageItems = sortedHistory.slice(startIndex, endIndex);
+
+        const html = currentPageItems.map(record => `
             <div class="owner-history-item">
                 <div class="owner-info">
                     <div class="owner-name">${Utils.escapeHtml(record.owner || 'Unknown')}</div>
@@ -231,6 +256,39 @@ class MetricsManager {
         `).join('');
 
         container.innerHTML = html;
+
+        // Update pagination controls
+        this.updatePaginationControls(totalPages);
+    }
+
+    changeOwnerHistoryPage(direction) {
+        const totalPages = Math.ceil(this.ownerHistoryData.length / this.ownerHistoryPageSize);
+        const newPage = this.ownerHistoryPage + direction;
+
+        if (newPage >= 1 && newPage <= totalPages) {
+            this.ownerHistoryPage = newPage;
+            this.displayOwnerHistory();
+        }
+    }
+
+    updatePaginationControls(totalPages) {
+        const paginationEl = document.getElementById('owner-history-pagination');
+        const prevBtn = document.getElementById('owner-history-prev');
+        const nextBtn = document.getElementById('owner-history-next');
+        const pageInfo = document.getElementById('owner-history-page-info');
+
+        if (!paginationEl || !prevBtn || !nextBtn || !pageInfo) return;
+
+        if (totalPages <= 1) {
+            paginationEl.style.display = 'none';
+            return;
+        }
+
+        paginationEl.style.display = 'flex';
+        pageInfo.textContent = `Page ${this.ownerHistoryPage} of ${totalPages}`;
+
+        prevBtn.disabled = this.ownerHistoryPage <= 1;
+        nextBtn.disabled = this.ownerHistoryPage >= totalPages;
     }
 
     showMetricsError(message) {

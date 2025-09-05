@@ -22,6 +22,12 @@ type Config struct {
 	DefaultMaxTTL       time.Duration `yaml:"default_max_ttl" json:"default_max_ttl" swaggertype:"string" example:"5m"`
 	DefaultQueueTimeout time.Duration `yaml:"default_queue_timeout" json:"default_queue_timeout" swaggertype:"string" example:"5m"`
 
+	// Metrics configuration
+	OwnerHistoryMaxSize int `yaml:"owner_history_max_size" json:"owner_history_max_size" example:"100"`
+
+	// Queue configuration
+	QueueMaxSize int `yaml:"queue_max_size" json:"queue_max_size" example:"1024"`
+
 	// Cleanup configuration
 	CleanupInterval time.Duration `yaml:"cleanup_interval" json:"cleanup_interval" swaggertype:"string" example:"30s"`
 }
@@ -35,6 +41,8 @@ func DefaultConfig() *Config {
 		DefaultTTL:          30 * time.Second,
 		DefaultMaxTTL:       5 * time.Minute,
 		DefaultQueueTimeout: 5 * time.Minute,
+		OwnerHistoryMaxSize: 100,
+		QueueMaxSize:        1024,
 
 		CleanupInterval: 5 * time.Second,
 	}
@@ -79,6 +87,18 @@ func (c *Config) LoadFromEnv() error {
 	if cleanupInterval := os.Getenv("GLOCK_CLEANUP_INTERVAL"); cleanupInterval != "" {
 		if d, err := time.ParseDuration(cleanupInterval); err == nil && d > 0 {
 			c.CleanupInterval = d
+		}
+	}
+
+	if ownerHistoryMaxSize := os.Getenv("GLOCK_OWNER_HISTORY_MAX_SIZE"); ownerHistoryMaxSize != "" {
+		if size, err := strconv.Atoi(ownerHistoryMaxSize); err == nil && size > 0 {
+			c.OwnerHistoryMaxSize = size
+		}
+	}
+
+	if queueMaxSize := os.Getenv("GLOCK_QUEUE_MAX_SIZE"); queueMaxSize != "" {
+		if size, err := strconv.Atoi(queueMaxSize); err == nil && size > 0 {
+			c.QueueMaxSize = size
 		}
 	}
 
@@ -127,6 +147,14 @@ func (c *Config) Validate() error {
 
 	if c.CleanupInterval <= 0 {
 		return fmt.Errorf("cleanup_interval must be greater than 0")
+	}
+
+	if c.OwnerHistoryMaxSize <= 0 {
+		return fmt.Errorf("owner_history_max_size must be greater than 0")
+	}
+
+	if c.QueueMaxSize <= 0 {
+		return fmt.Errorf("queue_max_size must be greater than 0")
 	}
 
 	return nil

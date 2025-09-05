@@ -679,3 +679,118 @@ func TestBackgroundCleanupGoroutine(t *testing.T) {
 		}
 	}
 }
+
+// TestQueueMaxSize tests that the queue respects the maximum size limit
+func TestQueueMaxSize(t *testing.T) {
+	// Create server with queue max size of 2
+	g := newServer(10)
+	g.Config.QueueMaxSize = 2
+
+	// Create a lock with FIFO queue
+	_, _, _ = g.CreateLock(&CreateRequest{
+		Name:         "queue-max-test",
+		TTL:          "1s",
+		MaxTTL:       "1m",
+		QueueType:    QueueFIFO,
+		QueueTimeout: "1m",
+	})
+
+	// 1. First client acquires the lock
+	result1, code1, err1 := g.AcquireLock(&AcquireRequest{
+		Name:    "queue-max-test",
+		Owner:   "client1",
+		OwnerID: "11111111-1111-1111-1111-111111111111",
+	})
+	if err1 != nil || code1 != http.StatusOK {
+		t.Fatalf("client1 acquire failed: code=%d err=%v", code1, err1)
+	}
+	lock1 := result1.(*Lock)
+	if lock1.Owner != "client1" {
+		t.Fatalf("expected client1 to own the lock, got %s", lock1.Owner)
+	}
+
+	// 2. Second client tries to acquire, should get queued
+	_, code2, err2 := g.AcquireLock(&AcquireRequest{
+		Name:    "queue-max-test",
+		Owner:   "client2",
+		OwnerID: "22222222-2222-2222-2222-222222222222",
+	})
+	if err2 != nil || code2 != http.StatusAccepted {
+		t.Fatalf("client2 should be queued, got code=%d err=%v", code2, err2)
+	}
+
+	// 3. Third client tries to acquire, should get queued (still under limit)
+	_, code3, err3 := g.AcquireLock(&AcquireRequest{
+		Name:    "queue-max-test",
+		Owner:   "client3",
+		OwnerID: "33333333-3333-3333-3333-333333333333",
+	})
+	if err3 != nil || code3 != http.StatusAccepted {
+		t.Fatalf("client3 should be queued, got code=%d err=%v", code3, err3)
+	}
+
+	// Verify queue size is 2
+	queueSize := lock1.getCurrentQueueSize()
+	if queueSize != 2 {
+		t.Fatalf("expected queue size 2, got %d", queueSize)
+	}
+
+	// 4. Fourth client tries to acquire, should be rejected due to queue limit
+	_, code4, err4 := g.AcquireLock(&AcquireRequest{
+		Name:    "queue-max-test",
+		Owner:   "client4",
+		OwnerID: "44444444-4444-4444-4444-444444444444",
+	})
+	if err4 == nil || code4 != http.StatusTooManyRequests {
+		t.Fatalf("client4 should be rejected due to queue limit, got code=%d err=%v", code4, err4)
+	}
+
+	// Verify the error message contains the correct limit
+	expectedError := "queue is at maximum capacity (2)"
+	if err4.Error() != expectedError {
+		t.Fatalf("expected error '%s', got '%s'", expectedError, err4.Error())
+	}
+
+	// 5. Fifth client should also be rejected
+	_, code5, err5 := g.AcquireLock(&AcquireRequest{
+		Name:    "queue-max-test",
+		Owner:   "client5",
+		OwnerID: "55555555-5555-5555-5555-555555555555",
+	})
+	if err5 == nil || code5 != http.StatusTooManyRequests {
+		t.Fatalf("client5 should be rejected due to queue limit, got code=%d err=%v", code5, err5)
+	}
+
+	// Verify queue size is still 2 (unchanged)
+	finalQueueSize := lock1.getCurrentQueueSize()
+	if finalQueueSize != 2 {
+		t.Fatalf("expected final queue size 2, got %d", finalQueueSize)
+	}
+
+	// 6. Release the lock, which should allow client2 (first in queue) to acquire it
+	_, code6, err6 := g.ReleaseLock(&ReleaseRequest{
+		Name:    "queue-max-test",
+		OwnerID: "11111111-1111-1111-1111-111111111111",
+		Token:   lock1.Token,
+	})
+	if err6 != nil || code6 != http.StatusOK {
+		t.Fatalf("lock release failed: code=%d err=%v", code6, err6)
+	}
+
+	// 7. Verify that client2 now owns the lock (should have been given it automatically)
+	// We need to check the current lock state
+	currentLockVal, exists := g.Locks.Load("queue-max-test")
+	if !exists {
+		t.Fatalf("lock should still exist")
+	}
+	currentLock := currentLockVal.(*Lock)
+	if currentLock.Owner != "client2" {
+		t.Fatalf("expected client2 to get the lock after release, got %s", currentLock.Owner)
+	}
+
+	// 8. Verify queue size is now 1 (client3 still waiting)
+	finalQueueSize = currentLock.getCurrentQueueSize()
+	if finalQueueSize != 1 {
+		t.Fatalf("expected final queue size 1 (client3 still waiting), got %d", finalQueueSize)
+	}
+}

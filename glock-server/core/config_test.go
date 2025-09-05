@@ -18,6 +18,12 @@ func TestDefaultConfig(t *testing.T) {
 	if config.DefaultTTL != 30*time.Second {
 		t.Errorf("Expected default TTL 30s, got %v", config.DefaultTTL)
 	}
+	if config.OwnerHistoryMaxSize != 100 {
+		t.Errorf("Expected owner history max size 100, got %d", config.OwnerHistoryMaxSize)
+	}
+	if config.QueueMaxSize != 1024 {
+		t.Errorf("Expected queue max size 1024, got %d", config.QueueMaxSize)
+	}
 }
 
 func TestConfigValidation(t *testing.T) {
@@ -34,6 +40,8 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          time.Second,
 				DefaultMaxTTL:       5 * time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: false,
@@ -46,6 +54,8 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          time.Second,
 				DefaultMaxTTL:       5 * time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: true,
@@ -58,6 +68,8 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          time.Second,
 				DefaultMaxTTL:       5 * time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: true,
@@ -70,6 +82,8 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          time.Second,
 				DefaultMaxTTL:       5 * time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: true,
@@ -82,6 +96,8 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          0,
 				DefaultMaxTTL:       5 * time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: true,
@@ -94,6 +110,36 @@ func TestConfigValidation(t *testing.T) {
 				DefaultTTL:          5 * time.Minute,
 				DefaultMaxTTL:       time.Minute,
 				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        1024,
+				CleanupInterval:     time.Second,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid owner history max size",
+			config: Config{
+				Port:                8080,
+				Capacity:            100,
+				DefaultTTL:          time.Second,
+				DefaultMaxTTL:       5 * time.Minute,
+				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 0,
+				QueueMaxSize:        1024,
+				CleanupInterval:     time.Second,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid queue max size",
+			config: Config{
+				Port:                8080,
+				Capacity:            100,
+				DefaultTTL:          time.Second,
+				DefaultMaxTTL:       5 * time.Minute,
+				DefaultQueueTimeout: time.Minute,
+				OwnerHistoryMaxSize: 100,
+				QueueMaxSize:        0,
 				CleanupInterval:     time.Second,
 			},
 			wantErr: true,
@@ -115,13 +161,15 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	os.Setenv("GLOCK_PORT", "9090")
 	os.Setenv("GLOCK_CAPACITY", "500")
 	os.Setenv("GLOCK_DEFAULT_TTL", "1m")
-	os.Setenv("GLOCK_METRICS_ENABLED", "false")
+	os.Setenv("GLOCK_OWNER_HISTORY_MAX_SIZE", "200")
+	os.Setenv("GLOCK_QUEUE_MAX_SIZE", "512")
 	defer func() {
 		// Clean up
 		os.Unsetenv("GLOCK_PORT")
 		os.Unsetenv("GLOCK_CAPACITY")
 		os.Unsetenv("GLOCK_DEFAULT_TTL")
-		os.Unsetenv("GLOCK_METRICS_ENABLED")
+		os.Unsetenv("GLOCK_OWNER_HISTORY_MAX_SIZE")
+		os.Unsetenv("GLOCK_QUEUE_MAX_SIZE")
 	}()
 
 	config := DefaultConfig()
@@ -138,6 +186,12 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	}
 	if config.DefaultTTL != time.Minute {
 		t.Errorf("Expected default TTL 1m, got %v", config.DefaultTTL)
+	}
+	if config.OwnerHistoryMaxSize != 200 {
+		t.Errorf("Expected owner history max size 200, got %d", config.OwnerHistoryMaxSize)
+	}
+	if config.QueueMaxSize != 512 {
+		t.Errorf("Expected queue max size 512, got %d", config.QueueMaxSize)
 	}
 }
 

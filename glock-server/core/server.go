@@ -270,7 +270,7 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 
 		// Record metrics
 		lock.recordAcquireAttempt(true)
-		lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt)
+		lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt, g.Config.OwnerHistoryMaxSize)
 
 		return lock, http.StatusOK, nil
 	}
@@ -286,6 +286,14 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 		// Record failed acquire attempt
 		lock.recordAcquireAttempt(false)
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
+	}
+
+	// Check if queue is at capacity
+	currentQueueSize := lock.getCurrentQueueSize()
+	if currentQueueSize >= g.Config.QueueMaxSize {
+		// Record failed acquire attempt
+		lock.recordAcquireAttempt(false)
+		return nil, http.StatusTooManyRequests, fmt.Errorf("queue is at maximum capacity (%d)", g.Config.QueueMaxSize)
 	}
 
 	// Add to queue
@@ -323,7 +331,7 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 
 			// Update metrics
 			lock.recordAcquireAttempt(true)
-			lock.recordOwnerChange(req.Owner, req.OwnerID, now)
+			lock.recordOwnerChange(req.Owner, req.OwnerID, now, g.Config.OwnerHistoryMaxSize)
 			lock.recordQueueTimeout() // Remove from queue count since we're processing it
 
 			return lock, http.StatusOK, nil
@@ -574,7 +582,7 @@ func (g *GlockServer) processQueueForAvailableLock(lock *Lock) bool {
 
 	// Record metrics for new owner
 	lock.recordAcquireAttempt(true)
-	lock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt)
+	lock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt, g.Config.OwnerHistoryMaxSize)
 	lock.recordQueueTimeout() // Remove from queue count since it's being processed
 
 	return true
@@ -699,7 +707,7 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 
 		// Record metrics for new owner
 		newLock.recordAcquireAttempt(true)
-		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, now)
+		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, now, g.Config.OwnerHistoryMaxSize)
 		newLock.recordQueueTimeout() // Remove from queue count since it's being processed
 	}
 
