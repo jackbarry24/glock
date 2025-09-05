@@ -433,6 +433,37 @@ func RemoveFromQueueHandler(c *gin.Context, g *GlockServer) {
 	c.JSON(code, gin.H{"removed": success})
 }
 
+// ListQueueHandler handles the /list route for listing all queued requests
+// @Summary List all requests in queue
+// @Description Get a list of all queued lock acquisition requests for a specific lock
+// @Tags queue
+// @Accept json
+// @Produce json
+// @Param request body QueueListRequest true "Queue list parameters"
+// @Success 200 {object} QueueListResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /list [post]
+func ListQueueHandler(c *gin.Context, g *GlockServer) {
+	var req QueueListRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
+		return
+	}
+
+	response, code, err := g.ListQueue(&req)
+	if err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(code, response)
+}
+
 // StatusHandler handles the /status route.
 // @Summary Get server status
 // @Description Get the current status of all locks on the server

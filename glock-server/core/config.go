@@ -36,7 +36,7 @@ func DefaultConfig() *Config {
 		DefaultMaxTTL:       5 * time.Minute,
 		DefaultQueueTimeout: 5 * time.Minute,
 
-		CleanupInterval: 30 * time.Second,
+		CleanupInterval: 5 * time.Second,
 	}
 }
 

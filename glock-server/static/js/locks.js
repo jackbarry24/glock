@@ -454,42 +454,69 @@ class LockManager {
         }
     }
 
-    showQueueDetails(lockName) {
+    async showQueueDetails(lockName) {
         const lock = this.locks.find(l => l.name === lockName);
         if (!lock || lock.queue_type === 'none') {
             Utils.showAlert('Info', 'This lock has no queue configured.', 'info');
             return;
         }
 
-        const queueSize = lock.queue_size || 0;
+        try {
+            // Show loading
+            Utils.showLoading();
 
-        if (queueSize === 0) {
-            Utils.showAlert('Info', `Queue for lock "${lockName}" is currently empty.`, 'info');
-            return;
+            // Fetch queue details from API
+            const response = await fetch('/api/queue/list', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name: lockName })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.showQueueDetailsModal(lock, data.requests);
+
+        } catch (error) {
+            console.error('Error loading queue details:', error);
+            Utils.showAlert('Error', 'Failed to load queue details: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    }
+
+    showQueueDetailsModal(lock, requests) {
+        // Check if modal already exists and remove it
+        const existingModal = document.querySelector('.modal');
+        if (existingModal) {
+            existingModal.remove();
         }
 
         // Create queue details modal content
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-content" style="max-width: 800px;">
                 <div class="modal-header">
-                    <h3>Queue Details - ${lockName}</h3>
+                    <h3>Queue Details - ${lock.name}</h3>
                     <span class="modal-close">&times;</span>
                 </div>
                 <div class="modal-body">
                     <div class="queue-summary">
                         <p><strong>Queue Type:</strong> ${lock.queue_type.toUpperCase()}</p>
-                        <p><strong>Requests in Queue:</strong> ${queueSize}</p>
+                        <p><strong>Requests in Queue:</strong> ${requests.length}</p>
                         <p><strong>Queue Timeout:</strong> ${Utils.formatTTL(lock.queue_timeout)}</p>
                     </div>
 
-                    <div class="queue-info-note">
-                        <p><em>Note: Detailed queue request information is not currently available through the API.</em></p>
-                        <p><em>This feature shows basic queue statistics only.</em></p>
-                    </div>
+                    ${requests.length > 0 ? this.generateQueueTable(requests) : '<div class="no-data">Queue is currently empty</div>'}
                 </div>
                 <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="refresh-queue-btn">Refresh</button>
                     <button type="button" class="btn btn-primary modal-close">Close</button>
                 </div>
             </div>
@@ -498,9 +525,14 @@ class LockManager {
         document.body.appendChild(modal);
         modal.style.display = 'flex';
 
-        // Add close functionality
+        // Store references for refresh functionality
+        modal._lockName = lock.name;
+        modal._lock = lock;
+
+        // Add event listeners
         const closeBtn = modal.querySelector('.modal-close');
-        const closeActionBtn = modal.querySelector('.modal-actions .btn');
+        const closeActionBtn = modal.querySelector('.modal-actions .btn-primary');
+        const refreshBtn = modal.querySelector('#refresh-queue-btn');
 
         const closeModal = () => {
             if (modal.parentNode) {
@@ -508,14 +540,179 @@ class LockManager {
             }
         };
 
+        const refreshQueue = async () => {
+            try {
+                Utils.showLoading();
+                const response = await fetch('/api/queue/list', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: modal._lockName })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Update the queue table
+                const modalBody = modal.querySelector('.modal-body');
+                const newContent = `
+                    <div class="queue-summary">
+                        <p><strong>Queue Type:</strong> ${modal._lock.queue_type.toUpperCase()}</p>
+                        <p><strong>Requests in Queue:</strong> ${data.requests.length}</p>
+                        <p><strong>Queue Timeout:</strong> ${Utils.formatTTL(modal._lock.queue_timeout)}</p>
+                    </div>
+                    ${data.requests.length > 0 ? this.generateQueueTable(data.requests) : '<div class="no-data">Queue is currently empty</div>'}
+                `;
+                modalBody.innerHTML = newContent;
+
+                Utils.showAlert('Success', 'Queue details refreshed!', 'success');
+
+            } catch (error) {
+                console.error('Error refreshing queue:', error);
+                Utils.showAlert('Error', 'Failed to refresh queue: ' + error.message, 'error');
+            } finally {
+                Utils.hideLoading();
+            }
+        };
+
         closeBtn.addEventListener('click', closeModal);
         closeActionBtn.addEventListener('click', closeModal);
+        refreshBtn.addEventListener('click', refreshQueue);
 
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
+        // Add remove button event listeners
+        modal.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('remove-queue-btn')) {
+                e.preventDefault();
+                const requestId = e.target.dataset.requestId;
+                const ownerId = e.target.dataset.ownerId;
+                await this.removeFromQueue(lock.name, requestId, ownerId, modal);
+            } else if (e.target === modal) {
                 closeModal();
             }
         });
+    }
+
+    generateQueueTable(requests) {
+        return `
+            <div class="queue-table-container">
+                <table class="queue-table">
+                    <thead>
+                        <tr>
+                            <th class="position-col">Position</th>
+                            <th class="request-id-col">Request ID</th>
+                            <th class="owner-col">Owner</th>
+                            <th class="time-col">Queued At</th>
+                            <th class="time-col">Time in Queue</th>
+                            <th class="actions-col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${requests.map((req, index) => `
+                            <tr>
+                                <td class="position-col">${index + 1}</td>
+                                <td class="request-id-col"><code>${Utils.escapeHtml(req.id)}</code></td>
+                                <td class="owner-col">${Utils.escapeHtml(req.owner)}</td>
+                                <td class="time-col">${new Date(req.queued_at).toLocaleString()}</td>
+                                <td class="time-col">${this.formatTimeInQueue(req.queued_at)}</td>
+                                <td class="actions-col">
+                                    <button class="remove-queue-btn"
+                                            data-request-id="${req.id}"
+                                            data-owner-id="${req.owner_id}"
+                                            title="Remove from queue">Remove</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    formatTimeInQueue(queuedAt) {
+        const now = new Date();
+        const queued = new Date(queuedAt);
+        const diffMs = now - queued;
+        const diffSeconds = Math.floor(diffMs / 1000);
+
+        if (diffSeconds < 60) return `${diffSeconds}s`;
+        if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+        return `${Math.floor(diffSeconds / 3600)}h`;
+    }
+
+    async removeFromQueue(lockName, requestId, ownerId, modal) {
+        Utils.showConfirm(
+            'Remove from Queue',
+            `Are you sure you want to remove request "${requestId}" from the queue?`,
+            async () => {
+                try {
+                    Utils.showLoading();
+
+                    const response = await fetch('/api/remove', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            name: lockName,
+                            request_id: requestId,
+                            owner_id: ownerId
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || `HTTP ${response.status}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.removed) {
+                        Utils.showAlert('Success', 'Request removed from queue successfully!', 'success');
+
+                        // Refresh the queue details
+                        const refreshResponse = await fetch('/api/queue/list', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ name: lockName })
+                        });
+
+                        if (refreshResponse.ok) {
+                            const refreshData = await refreshResponse.json();
+
+                            // Update the modal content
+                            const modalBody = modal.querySelector('.modal-body');
+                            const newContent = `
+                                <div class="queue-summary">
+                                    <p><strong>Queue Type:</strong> ${modal._lock.queue_type.toUpperCase()}</p>
+                                    <p><strong>Requests in Queue:</strong> ${refreshData.requests.length}</p>
+                                    <p><strong>Queue Timeout:</strong> ${Utils.formatTTL(modal._lock.queue_timeout)}</p>
+                                </div>
+                                ${refreshData.requests.length > 0 ? this.generateQueueTable(refreshData.requests) : '<div class="no-data">Queue is currently empty</div>'}
+                            `;
+                            modalBody.innerHTML = newContent;
+                        }
+
+                        // Refresh the main locks list to update queue sizes
+                        this.loadLocks();
+                    } else {
+                        Utils.showAlert('Warning', 'Request was not found in queue', 'warning');
+                    }
+
+                } catch (error) {
+                    console.error('Error removing from queue:', error);
+                    Utils.showAlert('Error', 'Failed to remove request from queue: ' + error.message, 'error');
+                } finally {
+                    Utils.hideLoading();
+                }
+            }
+        );
     }
 
     async freezeLock(lockName) {

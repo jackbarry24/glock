@@ -44,6 +44,17 @@ type PollResponse struct {
 	Lock     *Lock  `json:"lock,omitempty"`
 }
 
+// QueueListRequest is used to list all requests in a queue
+type QueueListRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// QueueListResponse contains the list of all queued requests
+type QueueListResponse struct {
+	LockName string          `json:"lock_name"`
+	Requests []*QueueRequest `json:"requests"`
+}
+
 // CreateRequest represents a request to create a new lock
 // @Description CreateRequest represents a request to create a new lock
 type CreateRequest struct {

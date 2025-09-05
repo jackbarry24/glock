@@ -2,9 +2,10 @@
 
 /* Locks Section */
 .locks-section {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+    border-radius: 2px;
+    border: 1px solid #e1e5e9;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     overflow: hidden;
     margin-top: 0;
 }
@@ -15,13 +16,15 @@
 }
 
 .locks-table th {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: #f9fafb;
+    color: #374151;
     border: none;
     font-weight: 600;
     text-transform: uppercase;
     font-size: 12px;
     letter-spacing: 0.5px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    border-bottom: 1px solid #e1e5e9;
 }
 
 .locks-table tbody tr {
@@ -29,69 +32,73 @@
 }
 
 .locks-table tbody tr:hover {
-    background-color: #f8f9ff;
-    transform: scale(1.01);
+    background: #f9fafb;
 }
 
 .frozen-row {
-    background-color: #f8f7ff !important;
-    border-left: 4px solid #9b59b6;
+    background: #fef3c7 !important;
+    border-left: 3px solid #d97706;
 }
 
 .frozen-row:hover {
-    background-color: #f0efff !important;
+    background: #fde68a !important;
 }
 
 /* Status Badges Enhancement */
 .status-badge {
     display: inline-block;
-    padding: 6px 12px;
-    border-radius: 20px;
+    padding: 2px 6px;
+    border-radius: 2px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    letter-spacing: 0.3px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    border: 1px solid;
 }
 
 .status-available {
-    background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
-    color: white;
+    background-color: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
 }
 
 .status-held {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
+    background-color: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
 }
 
 .status-expired {
-    background: linear-gradient(135deg, #ff6b6b 0%, #ffa726 100%);
-    color: white;
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
 }
 
 .status-frozen {
-    background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
-    color: white;
+    background-color: #f3e8ff;
+    color: #6b21a8;
+    border-color: #d8b4fe;
 }
 
 /* Time Remaining Styles */
 .time-remaining {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-weight: 700;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    font-weight: 500;
     font-size: 13px;
+    letter-spacing: 0.3px;
 }
 
 .time-expired {
-    color: #e74c3c;
-    animation: pulse 2s infinite;
+    color: #dc2626;
 }
 
 .time-warning {
-    color: #f39c12;
+    color: #d97706;
 }
 
 .time-normal {
-    color: #27ae60;
+    color: #059669;
 }
 
 @keyframes pulse {
@@ -113,16 +120,17 @@
     padding: 4px 8px;
     font-size: 12px;
     font-weight: 500;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    letter-spacing: 0.025em;
-    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.3px;
+    border-radius: 2px;
     margin-right: 4px;
     transition: all 0.2s ease;
+    border: 1px solid;
 }
 
 .action-btn:hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Queue Info */
@@ -194,6 +202,15 @@
     color: white;
 }
 
+/* Queue button in queue column */
+.locks-table .queue-details-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    margin: 0;
+    white-space: nowrap;
+    display: inline-block;
+}
+
 .queue-info strong {
     color: #2c3e50;
 }
@@ -225,21 +242,18 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 4px;
+    width: 3px;
     height: 100%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #3b82f6;
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .stat-number {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #2563eb;
 }
 
 /* Form Enhancements */
@@ -251,14 +265,18 @@
 .form-group select,
 .form-group textarea {
     transition: all 0.2s ease;
-    border: 2px solid #e1e8ed;
+    border: 2px solid #e9ecef;
+    background: white;
+    color: #374151;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.3px;
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
 /* Modal Enhancements */
@@ -279,21 +297,25 @@
 }
 
 .modal-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: #f9fafb;
+    color: #374151;
     margin: -20px -20px 20px -20px;
+    border-bottom: 1px solid #e1e5e9;
 }
 
 .modal-header h3 {
-    color: white;
+    color: #2563eb;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.5px;
 }
 
 .modal-close {
-    color: rgba(255, 255, 255, 0.8);
+    color: #6b7280;
+    transition: all 0.2s ease;
 }
 
 .modal-close:hover {
-    color: white;
+    color: #374151;
 }
 
 /* Button Hover Effects */
@@ -309,7 +331,7 @@
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.05), transparent);
     transition: left 0.5s;
 }
 
@@ -321,13 +343,19 @@
 .auto-refresh-toggle {
     position: relative;
     padding: 8px 12px;
-    border-radius: 20px;
-    background: #f8f9fa;
+    border-radius: 6px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
     transition: all 0.2s ease;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.3px;
+    color: #374151;
 }
 
 .auto-refresh-toggle:hover {
-    background: #e9ecef;
+    background: #e5e7eb;
+    border-color: #9ca3af;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .auto-refresh-toggle input[type="checkbox"] {
@@ -339,13 +367,14 @@
 .search-input,
 .filter-select {
     transition: all 0.2s ease;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.3px;
 }
 
 .search-input:focus,
 .filter-select:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    transform: scale(1.02);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
 /* Responsive Enhancements */
@@ -361,8 +390,8 @@
         padding: 4px 6px;
         font-size: 11px;
         font-weight: 500;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        letter-spacing: 0.025em;
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+        letter-spacing: 0.3px;
         margin-right: 2px;
     }
 
@@ -370,10 +399,10 @@
     .actions-column button,
     .actions-column .btn,
     .actions-column .metrics-btn {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace !important;
         font-weight: 500 !important;
         font-size: 11px !important;
-        letter-spacing: 0.025em !important;
+        letter-spacing: 0.3px !important;
     }
 
     .status-badge {
@@ -463,6 +492,143 @@
     font-size: 13px;
 }
 
+/* Queue Table Styles */
+.queue-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e1e5e9;
+    border-radius: 6px;
+    background: white;
+}
+
+.queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.queue-table th {
+    background: #f9fafb;
+    color: #374151;
+    border: none;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    border-bottom: 1px solid #e1e5e9;
+    padding: 12px 8px;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.queue-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #f1f3f4;
+    vertical-align: middle;
+}
+
+.queue-table tbody tr {
+    transition: all 0.2s ease;
+}
+
+.queue-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.queue-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Queue table specific styles */
+.queue-table .position-col {
+    width: 60px;
+    text-align: center;
+    font-weight: 600;
+    color: #2563eb;
+}
+
+.queue-table .request-id-col {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    font-size: 12px;
+    color: #374151;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.queue-table .owner-col {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.queue-table .time-col {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.queue-table .actions-col {
+    text-align: center;
+    width: 80px;
+}
+
+/* Remove button styling for queue */
+.queue-table .remove-queue-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid #dc3545;
+    background: #dc3545;
+    color: white;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.025em;
+}
+
+.queue-table .remove-queue-btn:hover {
+    background: #c82333;
+    border-color: #bd2130;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+/* Webkit scrollbar for queue table */
+.queue-table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.queue-table-container::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+.queue-table-container::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 4px;
+    border: 1px solid #f5f5f5;
+}
+
+.queue-table-container::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* Empty queue state */
+.queue-table-container .no-data {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-style: italic;
+    font-size: 14px;
+}
+
 /* Utility Classes for JavaScript */
 .loading {
     pointer-events: none;
@@ -493,6 +659,7 @@
     overflow: hidden !important;
     border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border: none;
 }
 
 #metrics-modal .modal-body {
@@ -756,11 +923,11 @@
 
 /* Metrics button in actions */
 .metrics-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    color: white !important;
-    border: none !important;
+    background: #ede9fe !important;
+    color: #6b21a8 !important;
+    border: 1px solid #d8b4fe !important;
     padding: 4px 8px !important;
-    border-radius: 4px !important;
+    border-radius: 2px !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
     margin-right: 5px !important;
@@ -769,12 +936,14 @@
     opacity: 1 !important;
     position: relative !important;
     z-index: 1 !important;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace !important;
+    letter-spacing: 0.3px !important;
 }
 
 .metrics-btn:hover {
-    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%) !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3) !important;
+    background: #ddd6fe !important;
+    border-color: #c084fc !important;
+    color: #7c3aed !important;
 }
 
 /* Ensure actions column doesn't cut off buttons */
@@ -788,9 +957,9 @@
 #metrics-modal .modal-header {
     flex-shrink: 0;
     padding: 24px 32px !important;
-    border-bottom: 1px solid #e9ecef !important;
+    border-bottom: 1px solid #e1e5e9 !important;
     margin: 0 !important;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     border-radius: 8px 8px 0 0;
 }
 
@@ -798,11 +967,14 @@
     color: white !important;
     font-size: 18px;
     font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.5px;
 }
 
 #metrics-modal .modal-close {
     color: rgba(255, 255, 255, 0.8) !important;
     font-size: 20px;
+    transition: all 0.2s ease;
 }
 
 #metrics-modal .modal-close:hover {
@@ -811,14 +983,14 @@
 
 #metrics-modal .modal-actions {
     padding: 24px 32px !important;
-    border-top: 1px solid #e9ecef;
-    background: white;
-    border-radius: 0 0 8px 8px;
+    border-top: 1px solid #e1e5e9;
+    background: #ffffff;
+    border-radius: 0 0 4px 4px;
     margin-top: auto !important;
     flex-shrink: 0;
     position: relative;
     z-index: 1;
-    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
 }
 
 #metrics-modal .modal-actions .btn {
@@ -997,6 +1169,7 @@
     overflow: hidden !important;
     border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border: none;
 }
 
 #create-modal .modal-header,
@@ -1005,7 +1178,7 @@
     padding: 24px 32px !important;
     border-bottom: 1px solid #e9ecef !important;
     margin: 0 !important;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     border-radius: 8px 8px 0 0;
 }
 
@@ -1227,6 +1400,7 @@
     overflow: hidden !important;
     border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border: none;
 }
 
 #confirm-modal .modal-header,
@@ -1235,7 +1409,7 @@
     padding: 24px 32px !important;
     border-bottom: 1px solid #e9ecef !important;
     margin: 0 !important;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     border-radius: 8px 8px 0 0;
 }
 

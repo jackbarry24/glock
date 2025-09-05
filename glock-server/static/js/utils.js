@@ -108,12 +108,13 @@ function formatQueueInfo(lock) {
     // Get queue size
     const queueSize = lock.queue_size || 0;
 
-    // Return plain text format: "X (TYPE)" or "Empty (TYPE)"
+    // Return plain text format: "Empty (TYPE)" or button for non-empty queues
     if (queueSize === 0) {
         return `Empty (${lock.queue_type.toUpperCase()})`;
     }
 
-    return `${queueSize} (${lock.queue_type.toUpperCase()})`;
+    // Return button for queues with items
+    return `<button class="btn btn-info btn-xs queue-details-btn" data-lock-name="${lock.name}" title="View queue details">${queueSize} in Queue</button>`;
 }
 
 // Format TTL durations
@@ -275,7 +276,7 @@ function safeJsonParse(jsonString) {
 
 // Format metadata for display
 function formatMetadata(metadata) {
-    if (!metadata) return '-';
+    if (!metadata) return '';
 
     try {
         const parsed = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;

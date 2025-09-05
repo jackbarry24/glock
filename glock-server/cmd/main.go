@@ -47,6 +47,7 @@ func main() {
 
 	// Serve static files for the dashboard
 	r.Static("/static", "./static")
+	r.StaticFile("/favicon.ico", "./static/favicon.ico")
 	r.StaticFile("/", "./static/index.html")
 
 	// API routes group
@@ -79,6 +80,9 @@ func main() {
 		})
 		api.POST("/remove", func(c *gin.Context) {
 			core.RemoveFromQueueHandler(c, locks)
+		})
+		api.POST("/queue/list", func(c *gin.Context) {
+			core.ListQueueHandler(c, locks)
 		})
 		api.POST("/freeze/:name", func(c *gin.Context) {
 			core.FreezeLockHandler(c, locks)

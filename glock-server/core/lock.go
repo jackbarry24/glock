@@ -27,6 +27,7 @@ type Lock struct {
 	queue        *LockQueue    `json:"-"`
 	mu           sync.Mutex    `json:"-"`
 	metrics      *LockMetrics  `json:"-"` // Metrics tracking
+
 }
 
 // LockQueue manages queued lock acquisition requests

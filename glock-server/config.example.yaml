@@ -11,5 +11,4 @@ default_ttl: 30s
 default_max_ttl: 5m
 default_queue_timeout: 5m
 
-# Cleanup configuration (how often to clean up expired locks)
-cleanup_interval: 30s
+cleanup_interval: 5s

@@ -438,6 +438,41 @@ func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
 	return true, http.StatusOK, nil
 }
 
+func (g *GlockServer) ListQueue(req *QueueListRequest) (*QueueListResponse, int, error) {
+	lockVal, exists := g.Locks.Load(req.Name)
+	if !exists {
+		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
+	}
+	lock := lockVal.(*Lock)
+
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+
+	if lock.queue == nil {
+		// Return empty list if no queue exists
+		return &QueueListResponse{
+			LockName: req.Name,
+			Requests: []*QueueRequest{},
+		}, http.StatusOK, nil
+	}
+
+	// Clean expired entries first
+	now := time.Now()
+	lock.queue.CleanExpired(now)
+
+	// Collect all requests from the queue
+	requests := make([]*QueueRequest, 0)
+	for e := lock.queue.list.Front(); e != nil; e = e.Next() {
+		req := e.Value.(*QueueRequest)
+		requests = append(requests, req)
+	}
+
+	return &QueueListResponse{
+		LockName: req.Name,
+		Requests: requests,
+	}, http.StatusOK, nil
+}
+
 func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 	lockVal, exists := g.Locks.Load(req.Name)
 	if !exists {
@@ -545,7 +580,7 @@ func (g *GlockServer) processQueueForAvailableLock(lock *Lock) bool {
 	return true
 }
 
-// StartCleanupGoroutine starts a background goroutine that periodically cleans up expired locks and processes queues
+// StartCleanupGoroutine starts a background goroutine that periodically cleans up expired locks
 func (g *GlockServer) StartCleanupGoroutine() {
 	g.cleanupDone = make(chan struct{})
 	go g.cleanupWorker()
