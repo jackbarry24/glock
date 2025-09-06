@@ -49,9 +49,17 @@ definitions:
       host:
         example: localhost
         type: string
+      owner_history_max_size:
+        description: Metrics configuration
+        example: 100
+        type: integer
       port:
         description: Server configuration
         example: 8080
+        type: integer
+      queue_max_size:
+        description: Queue configuration
+        example: 1024
         type: integer
     type: object
   core.CreateRequest:
@@ -242,6 +250,37 @@ definitions:
     - QueueNone
     - QueueFIFO
     - QueueLIFO
+  core.QueueListRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  core.QueueListResponse:
+    properties:
+      lock_name:
+        type: string
+      requests:
+        items:
+          $ref: '#/definitions/core.QueueRequest'
+        type: array
+    type: object
+  core.QueueRequest:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_id:
+        type: string
+      queued_at:
+        type: string
+      timeout_at:
+        type: string
+    type: object
   core.QueueResponse:
     properties:
       position:
@@ -548,6 +587,40 @@ paths:
       summary: List all locks
       tags:
       - status
+    post:
+      consumes:
+      - application/json
+      description: Get a list of all queued lock acquisition requests for a specific
+        lock
+      parameters:
+      - description: Queue list parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/core.QueueListRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/core.QueueListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List all requests in queue
+      tags:
+      - queue
   /metrics/{name}:
     get:
       consumes:

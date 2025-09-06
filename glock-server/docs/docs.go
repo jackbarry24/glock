@@ -330,6 +330,56 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "description": "Get a list of all queued lock acquisition requests for a specific lock",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "queue"
+                ],
+                "summary": "List all requests in queue",
+                "parameters": [
+                    {
+                        "description": "Queue list parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/core.QueueListRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/core.QueueListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/metrics/{name}": {
@@ -865,10 +915,20 @@ const docTemplate = `{
                     "type": "string",
                     "example": "localhost"
                 },
+                "owner_history_max_size": {
+                    "description": "Metrics configuration",
+                    "type": "integer",
+                    "example": 100
+                },
                 "port": {
                     "description": "Server configuration",
                     "type": "integer",
                     "example": 8080
+                },
+                "queue_max_size": {
+                    "description": "Queue configuration",
+                    "type": "integer",
+                    "example": 1024
                 }
             }
         },
@@ -1143,6 +1203,54 @@ const docTemplate = `{
                 "QueueFIFO",
                 "QueueLIFO"
             ]
+        },
+        "core.QueueListRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "core.QueueListResponse": {
+            "type": "object",
+            "properties": {
+                "lock_name": {
+                    "type": "string"
+                },
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.QueueRequest"
+                    }
+                }
+            }
+        },
+        "core.QueueRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "queued_at": {
+                    "type": "string"
+                },
+                "timeout_at": {
+                    "type": "string"
+                }
+            }
         },
         "core.QueueResponse": {
             "type": "object",
