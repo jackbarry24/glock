@@ -13,7 +13,8 @@ import (
 type GlockServer struct {
 	Size        int64
 	Capacity    int
-	Locks       sync.Map // Name -> *Lock
+	Locks       sync.Map // Name -> Tree Node
+	LockTree    *LockTree
 	Config      *Config
 	cleanupDone chan struct{} // Channel to signal cleanup goroutine to stop
 }
@@ -79,7 +80,17 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Atomically check and increment capacity
+	var parentNode *Node
+	if req.Parent != "" {
+		val, exists := g.Locks.Load(req.Parent)
+		if !exists {
+			return nil, http.StatusBadRequest, fmt.Errorf("parent lock %s does not exist", req.Parent)
+		}
+		parentNode = val.(*Node)
+	} else {
+		parentNode = g.LockTree.Root
+	}
+
 	for {
 		currentSize := atomic.LoadInt64(&g.Size)
 		if currentSize >= int64(g.Capacity) {
@@ -90,7 +101,6 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Set defaults for queue behavior
 	queueType := req.QueueType
 	if queueType == "" {
 		queueType = QueueNone
@@ -98,6 +108,7 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 
 	lock := &Lock{
 		Name:         req.Name,
+		Parent:	      req.Parent,
 		Owner:        "",
 		OwnerID:      "",
 		AcquiredAt:   time.Time{},
@@ -113,11 +124,12 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		queue:        NewLockQueue(),
 	}
 
-	if _, loaded := g.Locks.LoadOrStore(req.Name, lock); loaded {
-		// If lock already exists, decrement the size we just incremented
+	node := NewNode(parentNode, lock)
+
+	if _, loaded := g.Locks.LoadOrStore(req.Name, node); loaded {
 		atomic.AddInt64(&g.Size, -1)
 		return nil, http.StatusConflict, fmt.Errorf("lock %s already exists", req.Name)
-	}
+	} 
 
 	lock.QueueSize = lock.getCurrentQueueSize()
 	return lock, http.StatusOK, nil
@@ -173,11 +185,11 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		}
 	}
 
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock %s does not exist", req.Name)
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if !lock.IsAvailable() {
@@ -210,18 +222,19 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 }
 
 func (g *GlockServer) DeleteLock(name string) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(name)
+	node, exists := g.Locks.Load(name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if !lock.IsAvailable() {
 		return false, http.StatusConflict, fmt.Errorf("cannot delete lock that is currently held")
 	}
 	actual, loaded := g.Locks.LoadAndDelete(name)
-	if loaded && actual == lockVal {
+	// TODO: delete from tree here and move children up
+	if loaded && actual == node {
 		atomic.AddInt64(&g.Size, -1)
 		return true, http.StatusOK, nil
 	}
@@ -230,11 +243,11 @@ func (g *GlockServer) DeleteLock(name string) (bool, int, error) {
 }
 
 func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
@@ -347,11 +360,11 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 }
 
 func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return &PollResponse{Status: "not_found"}, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
@@ -424,11 +437,11 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 }
 
 func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
@@ -447,11 +460,11 @@ func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
 }
 
 func (g *GlockServer) ListQueue(req *QueueListRequest) (*QueueListResponse, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
@@ -482,11 +495,11 @@ func (g *GlockServer) ListQueue(req *QueueListRequest) (*QueueListResponse, int,
 }
 
 func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
@@ -523,11 +536,11 @@ func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 }
 
 func (g *GlockServer) VerifyLock(req *VerifyRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if lock.OwnerID != req.OwnerID {
@@ -620,17 +633,17 @@ func (g *GlockServer) cleanupWorker() {
 func (g *GlockServer) processExpiredLocks() {
 	g.Locks.Range(func(key, value interface{}) bool {
 		lockName := key.(string)
-		lock := value.(*Lock)
+		node := value.(*Node)
 
 		// Process the queue if the lock is available due to TTL expiration
-		if g.processQueueForAvailableLock(lock) {
+		if g.processQueueForAvailableLock(node.Lock) {
 			// Lock was granted to a queued client, update in map
-			g.Locks.Store(lockName, lock)
+			g.Locks.Store(lockName, node)
 		}
 
 		// Clean expired queue entries
-		if lock.queue != nil {
-			lock.queue.CleanExpired(time.Now())
+		if node.Lock.queue != nil {
+			node.Lock.queue.CleanExpired(time.Now())
 		}
 
 		return true // continue iteration
@@ -638,11 +651,12 @@ func (g *GlockServer) processExpiredLocks() {
 }
 
 func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	nodeVal, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	node := nodeVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
@@ -711,6 +725,8 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 		newLock.recordQueueTimeout() // Remove from queue count since it's being processed
 	}
 
-	g.Locks.Store(req.Name, &newLock)
+	node.Lock = &newLock
+
+	g.Locks.Store(req.Name, node)
 	return true, http.StatusOK, nil
 }

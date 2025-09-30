@@ -35,6 +35,7 @@ func main() {
 		Size:     0,
 		Capacity: config.Capacity,
 		Locks:    sync.Map{},
+		LockTree: core.NewLockTree(),
 		Config:   config,
 	}
 

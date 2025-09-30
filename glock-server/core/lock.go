@@ -11,6 +11,7 @@ import (
 // @Description Lock represents a distributed lock with metadata and timing information
 type Lock struct {
 	Name         string        `json:"name" example:"my-lock"`
+	Parent       string        `json:"parent,omitempty" example:"/parent-lock"`
 	Owner        string        `json:"owner" example:"client-app"`
 	OwnerID      string        `json:"owner_id" example:"uuid-123"`
 	AcquiredAt   time.Time     `json:"acquired_at"`
