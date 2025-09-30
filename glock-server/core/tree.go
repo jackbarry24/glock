@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 type LockTree struct {
 	Root *Node
@@ -15,10 +18,11 @@ func NewLockTree() *LockTree {
 }
 
 type Node struct {
-	Name     string
-	Parent   *Node
-	Children map[string]*Node
-	Lock     *Lock
+	Name                 string
+	Parent               *Node
+	Children             map[string]*Node
+	Lock                 *Lock
+	heldDescendantsCount atomic.Int32 // Count of held locks in subtree
 }
 
 func NewNode(parent *Node, lock *Lock) *Node {
@@ -74,4 +78,27 @@ func (n *Node) IsParentHeld(now time.Time) bool {
 		return !n.Parent.Lock.IsAvailable(now)
 	}
 	return false
+}
+
+// HasHeldDescendants checks if any descendant lock is currently held
+func (n *Node) HasHeldDescendants() bool {
+	return n.heldDescendantsCount.Load() > 0
+}
+
+// IncrementAncestorCounts increments the held descendants count for all ancestors
+func (n *Node) IncrementAncestorCounts() {
+	current := n.Parent
+	for current != nil {
+		current.heldDescendantsCount.Add(1)
+		current = current.Parent
+	}
+}
+
+// DecrementAncestorCounts decrements the held descendants count for all ancestors
+func (n *Node) DecrementAncestorCounts() {
+	current := n.Parent
+	for current != nil {
+		current.heldDescendantsCount.Add(-1)
+		current = current.Parent
+	}
 }

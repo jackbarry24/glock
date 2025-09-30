@@ -44,6 +44,30 @@
     background: #fde68a !important;
 }
 
+.blocked-row {
+    background: #fffbeb !important;
+    border-left: 3px solid #f59e0b;
+}
+
+.blocked-row:hover {
+    background: #fef3c7 !important;
+}
+
+/* Lock parent info styling */
+.lock-parent-info {
+    font-size: 11px;
+    color: #6b7280;
+    font-style: italic;
+    margin-top: 2px;
+    display: block;
+}
+
+.owner-blocked {
+    color: #92400e;
+    font-style: italic;
+    cursor: help;
+}
+
 /* Status Badges Enhancement */
 .status-badge {
     display: inline-block;
@@ -79,6 +103,13 @@
     background-color: #f3e8ff;
     color: #6b21a8;
     border-color: #d8b4fe;
+}
+
+.status-blocked {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+    cursor: help;
 }
 
 /* Time Remaining Styles */
@@ -415,8 +446,8 @@
     }
 }
 
-/* Dark Mode Support (for future enhancement) */
-@media (prefers-color-scheme: dark) {
+/* Dark Mode Support (disabled for now) */
+/* @media (prefers-color-scheme: dark) {
     .locks-table th {
         background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
     }
@@ -424,7 +455,7 @@
     .locks-table tbody tr:hover {
         background-color: #2d3748;
     }
-}
+} */
 
 /* Print Styles */
 @media print {

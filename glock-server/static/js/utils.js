@@ -58,13 +58,18 @@ function formatTimeRemaining(lock) {
 }
 
 // Format lock status with badge
-function formatStatus(lock) {
+function formatStatus(lock, ancestorInfo = { isBlocked: false }) {
     let statusText = '';
     let statusClass = '';
+    let tooltip = '';
 
     if (lock.frozen) {
         statusText = 'Frozen';
         statusClass = 'status-frozen';
+    } else if (ancestorInfo.isBlocked) {
+        statusText = 'Blocked';
+        statusClass = 'status-blocked';
+        tooltip = `Parent lock "${escapeHtml(ancestorInfo.blockedBy)}" is held by ${escapeHtml(ancestorInfo.blockedByOwner)}`;
     } else if (!lock.owner_id) {
         statusText = 'Available';
         statusClass = 'status-available';
@@ -84,11 +89,17 @@ function formatStatus(lock) {
         }
     }
 
-    return `<span class="status-badge ${statusClass}">${statusText}</span>`;
+    const titleAttr = tooltip ? ` title="${tooltip}"` : '';
+    return `<span class="status-badge ${statusClass}"${titleAttr}>${statusText}</span>`;
 }
 
 // Format owner display
-function formatOwner(lock) {
+function formatOwner(lock, ancestorInfo = { isBlocked: false }) {
+    // If blocked by parent, show parent owner info
+    if (ancestorInfo.isBlocked) {
+        return `<span class="owner-blocked" title="Blocked by parent: ${escapeHtml(ancestorInfo.blockedBy)}">— (${escapeHtml(ancestorInfo.blockedByOwner)})</span>`;
+    }
+
     // If lock is frozen or available, show "-" instead of owner
     if (lock.frozen || !lock.owner_id) {
         return '<span class="owner-none">-</span>';
@@ -125,7 +136,7 @@ function formatTTL(nanoseconds) {
 }
 
 // Generate action buttons for a lock
-function generateActionButtons(lock) {
+function generateActionButtons(lock, ancestorInfo = { isBlocked: false }) {
     const actions = [];
 
     // Metrics button (always available)
@@ -147,8 +158,8 @@ function generateActionButtons(lock) {
         actions.push(`<button class="btn btn-secondary btn-sm action-btn freeze-btn" data-lock-name="${lock.name}">Freeze</button>`);
     }
 
-    // Delete button (only if not currently held)
-    if (!lock.owner_id) {
+    // Delete button (only if not currently held and not blocked)
+    if (!lock.owner_id && !ancestorInfo.isBlocked) {
         actions.push(`<button class="btn btn-danger btn-sm action-btn delete-btn" data-lock-name="${lock.name}">Delete</button>`);
     }
 

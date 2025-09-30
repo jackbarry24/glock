@@ -11,6 +11,7 @@ class LockManager {
         this.lastUpdated = null;
         this.autoRefreshInterval = null;
         this.autoRefreshEnabled = false;
+        this.lockHierarchy = {}; // Map of lock name to parent chain
 
         this.init();
     }
@@ -127,6 +128,9 @@ class LockManager {
             this.locks = data.locks || [];
             this.lastUpdated = new Date();
 
+            // Build lock hierarchy after loading locks
+            this.buildLockHierarchy();
+
             this.updateStats();
             this.applyFilters();
             this.updateLastUpdated();
@@ -142,14 +146,60 @@ class LockManager {
 
     updateStats() {
         const totalLocks = this.locks.length;
-        const availableLocks = this.locks.filter(lock => !lock.owner_id).length;
+        const blockedLocks = this.locks.filter(lock => {
+            const ancestorInfo = this.lockHierarchy[lock.name] || { isBlocked: false };
+            return ancestorInfo.isBlocked;
+        }).length;
+        const availableLocks = this.locks.filter(lock => {
+            const ancestorInfo = this.lockHierarchy[lock.name] || { isBlocked: false };
+            return !lock.owner_id && !ancestorInfo.isBlocked;
+        }).length;
         const heldLocks = this.locks.filter(lock => lock.owner_id && this.isLockValid(lock)).length;
         const expiredLocks = this.locks.filter(lock => lock.owner_id && !this.isLockValid(lock)).length;
 
         document.getElementById('total-locks').textContent = totalLocks;
         document.getElementById('available-locks').textContent = availableLocks;
         document.getElementById('held-locks').textContent = heldLocks;
+        const blockedLocksEl = document.getElementById('blocked-locks');
+        if (blockedLocksEl) {
+            blockedLocksEl.textContent = blockedLocks;
+        }
         document.getElementById('expired-locks').textContent = expiredLocks;
+    }
+
+    buildLockHierarchy() {
+        // Build a map of lock names to their locks for quick lookup
+        const lockMap = {};
+        this.locks.forEach(lock => {
+            lockMap[lock.name] = lock;
+        });
+
+        // For each lock, compute if any ancestor is held
+        this.lockHierarchy = {};
+        this.locks.forEach(lock => {
+            const ancestorInfo = this.findHeldAncestor(lock, lockMap);
+            this.lockHierarchy[lock.name] = ancestorInfo;
+        });
+    }
+
+    findHeldAncestor(lock, lockMap) {
+        // Walk up the parent chain to find if any ancestor is held
+        let current = lock;
+        while (current.parent && current.parent !== '') {
+            const parent = lockMap[current.parent];
+            if (!parent) break; // Parent doesn't exist
+
+            // Check if parent is held
+            if (parent.owner_id && this.isLockValid(parent)) {
+                return {
+                    isBlocked: true,
+                    blockedBy: parent.name,
+                    blockedByOwner: parent.owner || parent.owner_id
+                };
+            }
+            current = parent;
+        }
+        return { isBlocked: false };
     }
 
     isLockValid(lock) {
@@ -175,15 +225,19 @@ class LockManager {
             // Status filter
             let matchesStatus = true;
             if (this.statusFilter) {
+                const ancestorInfo = this.lockHierarchy[lock.name] || { isBlocked: false };
                 switch (this.statusFilter) {
                     case 'available':
-                        matchesStatus = !lock.owner_id;
+                        matchesStatus = !lock.owner_id && !ancestorInfo.isBlocked;
                         break;
                     case 'held':
                         matchesStatus = lock.owner_id && this.isLockValid(lock);
                         break;
                     case 'expired':
                         matchesStatus = lock.owner_id && !this.isLockValid(lock);
+                        break;
+                    case 'blocked':
+                        matchesStatus = ancestorInfo.isBlocked;
                         break;
                 }
             }
@@ -204,12 +258,14 @@ class LockManager {
         }
 
         const rows = this.filteredLocks.map(lock => {
-            const actionButtons = Utils.generateActionButtons(lock);
+            const ancestorInfo = this.lockHierarchy[lock.name] || { isBlocked: false };
+            const actionButtons = Utils.generateActionButtons(lock, ancestorInfo);
+            const rowClass = lock.frozen ? 'frozen-row' : (ancestorInfo.isBlocked ? 'blocked-row' : '');
             return `
-            <tr class="loading-row ${lock.frozen ? 'frozen-row' : ''}">
-                <td><strong>${Utils.escapeHtml(lock.name)}</strong></td>
-                <td>${Utils.formatOwner(lock)}</td>
-                <td>${Utils.formatStatus(lock)}</td>
+            <tr class="loading-row ${rowClass}">
+                <td><strong>${Utils.escapeHtml(lock.name)}</strong>${this.formatParentInfo(lock)}</td>
+                <td>${Utils.formatOwner(lock, ancestorInfo)}</td>
+                <td>${Utils.formatStatus(lock, ancestorInfo)}</td>
                 <td>${Utils.formatTimeRemaining(lock)}</td>
                 <td>${Utils.formatTTL(lock.ttl)}</td>
                 <td>${Utils.formatTTL(lock.max_ttl)}</td>
@@ -268,6 +324,7 @@ class LockManager {
         if (modal) {
             // Populate form
             document.getElementById('update-lock-name').value = lock.name;
+            document.getElementById('update-parent').value = lock.parent || '';
             document.getElementById('update-ttl').value = this.secondsToDuration(lock.ttl);
             document.getElementById('update-max-ttl').value = this.secondsToDuration(lock.max_ttl);
             document.getElementById('update-queue-type').value = lock.queue_type;
@@ -295,6 +352,7 @@ class LockManager {
             name: formData.get('name'),
             ttl: formData.get('ttl'),
             max_ttl: formData.get('max_ttl'),
+            parent: formData.get('parent') || '',
             queue_type: formData.get('queue_type') || 'none',
             queue_timeout: formData.get('queue_timeout') || '',
             metadata: formData.get('metadata') || null
@@ -341,6 +399,7 @@ class LockManager {
             name: formData.get('name'),
             ttl: formData.get('ttl'),
             max_ttl: formData.get('max_ttl'),
+            parent: formData.get('parent') || '',
             queue_type: formData.get('queue_type') || 'none',
             queue_timeout: formData.get('queue_timeout') || '',
             metadata: formData.get('metadata') || null
@@ -761,6 +820,13 @@ class LockManager {
             console.error('Error unfreezing lock:', error);
             Utils.showAlert('Error', 'Failed to unfreeze lock: ' + error.message, 'error');
         }
+    }
+
+    formatParentInfo(lock) {
+        if (lock.parent && lock.parent !== '') {
+            return `<div class="lock-parent-info" title="Child of ${Utils.escapeHtml(lock.parent)}">↳ ${Utils.escapeHtml(lock.parent)}</div>`;
+        }
+        return '';
     }
 
     closeAllModals() {

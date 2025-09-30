@@ -37,9 +37,6 @@ func main() {
 		Config:   config,
 	}
 
-	locks.StartCleanupGoroutine()
-	defer locks.StopCleanupGoroutine()
-
 	r := gin.Default()
 
 	r.Static("/static", "./static")

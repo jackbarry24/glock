@@ -1,7 +1,6 @@
 package core
 
 import (
-	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,95 +29,7 @@ type Lock struct {
 	metrics      *LockMetrics  `json:"-"`
 }
 
-type LockQueue struct {
-	requests map[string]*list.Element
-	list     *list.List
-}
-
-func NewLockQueue() *LockQueue {
-	return &LockQueue{
-		requests: make(map[string]*list.Element),
-		list:     list.New(),
-	}
-}
-
-func (q *LockQueue) Enqueue(req *QueueRequest, isLIFO bool) {
-	element := q.list.PushBack(req)
-	if isLIFO {
-		q.list.MoveToFront(element)
-	}
-	q.requests[req.ID] = element
-}
-
-func (q *LockQueue) Dequeue() *QueueRequest {
-	if q.list.Len() == 0 {
-		return nil
-	}
-
-	element := q.list.Front()
-	q.list.Remove(element)
-	req := element.Value.(*QueueRequest)
-	delete(q.requests, req.ID)
-	return req
-}
-
-func (q *LockQueue) Remove(requestID string) *QueueRequest {
-	element, exists := q.requests[requestID]
-	if !exists {
-		return nil
-	}
-
-	delete(q.requests, requestID)
-	q.list.Remove(element)
-	return element.Value.(*QueueRequest)
-}
-
-func (q *LockQueue) GetPosition(requestID string) int {
-	element, exists := q.requests[requestID]
-	if !exists {
-		return -1
-	}
-
-	position := 1
-	for e := q.list.Front(); e != nil; e = e.Next() {
-		if e == element {
-			return position
-		}
-		position++
-	}
-	return -1
-}
-
-func (q *LockQueue) GetNext() *QueueRequest {
-	if q.list.Len() == 0 {
-		return nil
-	}
-
-	element := q.list.Front()
-	return element.Value.(*QueueRequest)
-}
-
-func (q *LockQueue) Size() int {
-	return q.list.Len()
-}
-
-func (q *LockQueue) CleanExpired(now time.Time) int {
-	removed := 0
-	gracePeriod := 5 * time.Second
-
-	for e := q.list.Front(); e != nil; {
-		req := e.Value.(*QueueRequest)
-		next := e.Next()
-
-		if now.After(req.TimeoutAt.Add(gracePeriod)) {
-			delete(q.requests, req.ID)
-			q.list.Remove(e)
-			removed++
-		}
-		e = next
-	}
-	return removed
-}
+// LockQueue is now defined in queue.go
 
 func (l *Lock) IsAvailable(now time.Time) bool {
 	if l.OwnerID == "" {
