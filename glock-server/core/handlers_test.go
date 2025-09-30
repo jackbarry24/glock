@@ -38,6 +38,7 @@ func TestHandlers_CreateAcquireRelease(t *testing.T) {
 	g := &GlockServer{
 		Capacity: 10,
 		Locks:    sync.Map{},
+		LockTree: NewLockTree(),
 		Config:   config,
 	}
 	r := setupRouter(g)
@@ -87,6 +88,7 @@ func TestHandlers_Status(t *testing.T) {
 	g := &GlockServer{
 		Capacity: 10,
 		Locks:    sync.Map{},
+		LockTree: NewLockTree(),
 		Config:   config,
 	}
 	r := setupRouter(g)

@@ -13,6 +13,7 @@ type CreateRequest struct {
 	Name         string        `json:"name" binding:"required"`
 	TTL          string        `json:"ttl" binding:"required"`
 	MaxTTL       string        `json:"max_ttl" binding:"required"`
+	Parent       string        `json:"parent,omitempty"`
 	Metadata     any           `json:"metadata"`
 	QueueType    QueueBehavior `json:"queue_type,omitempty"`
 	QueueTimeout string        `json:"queue_timeout,omitempty"`
@@ -26,6 +27,7 @@ type UpdateRequest struct {
 	Name         string        `json:"name" binding:"required"`
 	TTL          string        `json:"ttl" binding:"required"`
 	MaxTTL       string        `json:"max_ttl" binding:"required"`
+	Parent       string        `json:"parent,omitempty"`
 	Metadata     any           `json:"metadata"`
 	QueueType    QueueBehavior `json:"queue_type,omitempty"`
 	QueueTimeout string        `json:"queue_timeout,omitempty"`

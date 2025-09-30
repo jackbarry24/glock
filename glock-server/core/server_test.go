@@ -13,6 +13,7 @@ func newServer(capacity int) *GlockServer {
 	return &GlockServer{
 		Capacity: capacity,
 		Locks:    sync.Map{},
+		LockTree: NewLockTree(),
 		Config:   config,
 	}
 }
@@ -516,8 +517,8 @@ func TestRemoveFromQueueSuccess(t *testing.T) {
 
 	// Manually add to queue for testing
 	lockVal, _ := g.Locks.Load("remove-test-lock")
-	testLock := lockVal.(*Lock)
-	testLock.queue.Enqueue(queueReq, false)
+	node := lockVal.(*Node)
+	node.Lock.queue.Enqueue(queueReq, false)
 
 	// Now try to remove it
 	removed, code, err := g.RemoveFromQueue(&PollRequest{
@@ -783,13 +784,13 @@ func TestQueueMaxSize(t *testing.T) {
 	if !exists {
 		t.Fatalf("lock should still exist")
 	}
-	currentLock := currentLockVal.(*Lock)
-	if currentLock.Owner != "client2" {
-		t.Fatalf("expected client2 to get the lock after release, got %s", currentLock.Owner)
+	currentNode := currentLockVal.(*Node)
+	if currentNode.Lock.Owner != "client2" {
+		t.Fatalf("expected client2 to get the lock after release, got %s", currentNode.Lock.Owner)
 	}
 
 	// 8. Verify queue size is now 1 (client3 still waiting)
-	finalQueueSize = currentLock.getCurrentQueueSize()
+	finalQueueSize = currentNode.Lock.getCurrentQueueSize()
 	if finalQueueSize != 1 {
 		t.Fatalf("expected final queue size 1 (client3 still waiting), got %d", finalQueueSize)
 	}

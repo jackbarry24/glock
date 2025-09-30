@@ -505,8 +505,8 @@ func TestQueueLIFOBehavior(t *testing.T) {
 	// Note: Client2's stored position is from when it was queued, so it shows position 1
 	// But the actual current position should be 2. Let's check the current position.
 	lockVal, _ := g.Locks.Load("lifo-test")
-	lock := lockVal.(*Lock)
-	currentPos2 := lock.queue.GetPosition(queueResp2.RequestID)
+	node := lockVal.(*Node)
+	currentPos2 := node.Lock.queue.GetPosition(queueResp2.RequestID)
 	if currentPos2 != 2 {
 		t.Fatalf("expected current second request position 2, got %d", currentPos2)
 	}

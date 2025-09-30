@@ -21,7 +21,6 @@ import (
 // @host localhost:8080
 // @BasePath /
 func main() {
-	// Load configuration
 	configFile := os.Getenv("GLOCK_CONFIG_FILE")
 	config, err := core.LoadConfig(configFile)
 	if err != nil {
@@ -30,7 +29,6 @@ func main() {
 
 	log.Printf("Starting glock server with config: %+v", config)
 
-	// Initialize server
 	locks := &core.GlockServer{
 		Size:     0,
 		Capacity: config.Capacity,
@@ -39,22 +37,17 @@ func main() {
 		Config:   config,
 	}
 
-	// Start background cleanup goroutine for TTL expiration processing
 	locks.StartCleanupGoroutine()
 	defer locks.StopCleanupGoroutine()
 
-	// Setup Gin router
 	r := gin.Default()
 
-	// Serve static files for the dashboard
 	r.Static("/static", "./static")
 	r.StaticFile("/favicon.ico", "./static/favicon.ico")
 	r.StaticFile("/", "./static/index.html")
 
-	// API routes group
 	api := r.Group("/api")
 	{
-		// Lock management endpoints
 		api.POST("/create", func(c *gin.Context) {
 			core.CreateHandler(c, locks)
 		})
@@ -92,7 +85,6 @@ func main() {
 			core.UnfreezeLockHandler(c, locks)
 		})
 
-		// Status and listing endpoints
 		api.GET("/status", func(c *gin.Context) {
 			core.StatusHandler(c, locks)
 		})
@@ -103,7 +95,6 @@ func main() {
 			core.MetricsHandler(c, locks)
 		})
 
-		// Configuration endpoints
 		api.GET("/config", func(c *gin.Context) {
 			core.ConfigHandler(c, locks)
 		})
@@ -112,10 +103,8 @@ func main() {
 		})
 	}
 
-	// Swagger UI endpoint
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// Start server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	log.Printf("Starting server on %s", addr)
 	if err := r.Run(addr); err != nil {
