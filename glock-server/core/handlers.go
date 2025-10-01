@@ -31,7 +31,6 @@ func CreateHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Parse TTL
 	ttlDuration, err := time.ParseDuration(req.TTL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid ttl format: %v", err)})
@@ -42,7 +41,6 @@ func CreateHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Parse MaxTTL
 	maxTTLDuration, err := time.ParseDuration(req.MaxTTL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid max_ttl format: %v", err)})
@@ -58,7 +56,6 @@ func CreateHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Parse QueueTimeout if provided
 	var queueTimeoutDuration time.Duration
 	if req.QueueTimeout != "" {
 		queueTimeoutDuration, err = time.ParseDuration(req.QueueTimeout)
@@ -72,11 +69,9 @@ func CreateHandler(c *gin.Context, g *GlockServer) {
 		}
 	}
 
-	// Validate queue parameters
 	if req.QueueType != "" {
 		switch req.QueueType {
 		case QueueNone, QueueFIFO, QueueLIFO:
-			// Valid queue type
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
 			return
@@ -114,7 +109,6 @@ func UpdateHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Parse TTL if provided
 	if req.TTL != "" {
 		_, err := time.ParseDuration(req.TTL)
 		if err != nil {
@@ -123,7 +117,6 @@ func UpdateHandler(c *gin.Context, g *GlockServer) {
 		}
 	}
 
-	// Parse MaxTTL if provided
 	if req.MaxTTL != "" {
 		_, err := time.ParseDuration(req.MaxTTL)
 		if err != nil {
@@ -132,7 +125,6 @@ func UpdateHandler(c *gin.Context, g *GlockServer) {
 		}
 	}
 
-	// Parse QueueTimeout if provided
 	if req.QueueTimeout != "" {
 		_, err := time.ParseDuration(req.QueueTimeout)
 		if err != nil {
@@ -141,11 +133,9 @@ func UpdateHandler(c *gin.Context, g *GlockServer) {
 		}
 	}
 
-	// Validate queue parameters
 	if req.QueueType != "" {
 		switch req.QueueType {
 		case QueueNone, QueueFIFO, QueueLIFO:
-			// Valid queue type
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
 			return
@@ -221,7 +211,6 @@ func AcquireHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Check if result is a queue response or lock
 	switch response := result.(type) {
 	case *Lock:
 		c.JSON(code, gin.H{"lock": response})
@@ -385,7 +374,6 @@ func PollHandler(c *gin.Context, g *GlockServer) {
 
 	resp, code, err := g.PollQueue(&req)
 	if err != nil && resp == nil {
-		// Only return error if we don't have a response to return
 		c.JSON(code, gin.H{"error": err.Error()})
 		return
 	}
@@ -475,7 +463,8 @@ func ListQueueHandler(c *gin.Context, g *GlockServer) {
 func StatusHandler(c *gin.Context, g *GlockServer) {
 	locks := make([]*Lock, 0)
 	g.Locks.Range(func(key, value any) bool {
-		if lock, ok := value.(*Lock); ok {
+		if node, ok := value.(*Node); ok {
+			lock := node.Lock
 			lock.mu.Lock()
 			lock.QueueSize = lock.getCurrentQueueSize()
 			lock.mu.Unlock()
@@ -497,8 +486,8 @@ func StatusHandler(c *gin.Context, g *GlockServer) {
 func ListHandler(c *gin.Context, g *GlockServer) {
 	locks := make([]*string, 0)
 	g.Locks.Range(func(key, value any) bool {
-		if lock, ok := value.(*Lock); ok {
-			locks = append(locks, &lock.Name)
+		if node, ok := value.(*Node); ok {
+			locks = append(locks, &node.Lock.Name)
 		}
 		return true
 	})
@@ -534,14 +523,11 @@ func UpdateConfigHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	// Validate the new configuration
 	if err := req.Validate(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Update configuration (this is a runtime update, so we need to be careful)
-	// For now, we'll update most fields but some might require restart
 	g.Config.Capacity = req.Capacity
 	g.Config.DefaultTTL = req.DefaultTTL
 	g.Config.DefaultMaxTTL = req.DefaultMaxTTL
@@ -580,7 +566,7 @@ func FreezeLockHandler(c *gin.Context, g *GlockServer) {
 	defer lock.mu.Unlock()
 
 	if lock.Frozen {
-		c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock was already frozen"})
+		c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock is already frozen"})
 		return
 	}
 
@@ -617,7 +603,7 @@ func UnfreezeLockHandler(c *gin.Context, g *GlockServer) {
 	defer lock.mu.Unlock()
 
 	if !lock.Frozen {
-		c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock was already unfrozen"})
+		c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock is already unfrozen"})
 		return
 	}
 
@@ -648,7 +634,8 @@ func MetricsHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	lock := lockVal.(*Lock)
+	node := lockVal.(*Node)
+	lock := node.Lock
 	metrics := lock.GetMetrics()
 
 	response := MetricsResponse{

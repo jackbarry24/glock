@@ -505,8 +505,8 @@ func TestQueueLIFOBehavior(t *testing.T) {
 	// Note: Client2's stored position is from when it was queued, so it shows position 1
 	// But the actual current position should be 2. Let's check the current position.
 	lockVal, _ := g.Locks.Load("lifo-test")
-	lock := lockVal.(*Lock)
-	currentPos2 := lock.queue.GetPosition(queueResp2.RequestID)
+	node := lockVal.(*Node)
+	currentPos2 := node.Lock.queue.GetPosition(queueResp2.RequestID)
 	if currentPos2 != 2 {
 		t.Fatalf("expected current second request position 2, got %d", currentPos2)
 	}
@@ -752,16 +752,18 @@ func TestQueueSizeAndCleanup(t *testing.T) {
 		t.Fatalf("first request should be expired, got status=%s", pollResp.Status)
 	}
 
-	// Release lock - since all requests are expired, lock should become available
+	// Release lock - this will try to grant from queue, which will remove expired requests
 	g.ReleaseLock(&ReleaseRequest{Name: "size-test", OwnerID: "11111111-1111-1111-1111-111111111111", Token: lock1.Token})
 
-	// Poll second request - should be expired
+	// Poll second request - it should be not_found because release already cleaned expired requests
 	pollResp2, _, _ := g.PollQueue(&PollRequest{
 		Name:      "size-test",
 		RequestID: queueRequests[1].RequestID,
 		OwnerID:   "00031111-1111-1111-1111-111111111111",
 	})
-	if pollResp2.Status != "expired" {
-		t.Fatalf("second request should be expired, got status=%s", pollResp2.Status)
+	// With the new queue system, expired requests are removed proactively during tryGrantFromQueue
+	// So this request was already removed when we tried to grant during release
+	if pollResp2.Status != "not_found" && pollResp2.Status != "expired" {
+		t.Fatalf("second request should be not_found or expired, got status=%s", pollResp2.Status)
 	}
 }

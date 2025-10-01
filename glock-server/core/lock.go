@@ -1,7 +1,6 @@
 package core
 
 import (
-	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +10,7 @@ import (
 // @Description Lock represents a distributed lock with metadata and timing information
 type Lock struct {
 	Name         string        `json:"name" example:"my-lock"`
+	Parent       string        `json:"parent,omitempty" example:"/parent-lock"`
 	Owner        string        `json:"owner" example:"client-app"`
 	OwnerID      string        `json:"owner_id" example:"uuid-123"`
 	AcquiredAt   time.Time     `json:"acquired_at"`
@@ -26,118 +26,16 @@ type Lock struct {
 	Frozen       bool          `json:"frozen" example:"false"`
 	queue        *LockQueue    `json:"-"`
 	mu           sync.Mutex    `json:"-"`
-	metrics      *LockMetrics  `json:"-"` // Metrics tracking
-
+	metrics      *LockMetrics  `json:"-"`
+	isHeld       atomic.Bool   `json:"-"`
 }
 
-// LockQueue manages queued lock acquisition requests
-type LockQueue struct {
-	requests map[string]*list.Element // requestID -> list element
-	list     *list.List               // doubly linked list for FIFO/LIFO
-}
+// LockQueue is now defined in queue.go
 
-// NewLockQueue creates a new queue for lock requests
-func NewLockQueue() *LockQueue {
-	return &LockQueue{
-		requests: make(map[string]*list.Element),
-		list:     list.New(),
-	}
-}
-
-// Enqueue adds a request to the queue
-func (q *LockQueue) Enqueue(req *QueueRequest, isLIFO bool) {
-	element := q.list.PushBack(req)
-	if isLIFO {
-		// For LIFO, move to front
-		q.list.MoveToFront(element)
-	}
-	q.requests[req.ID] = element
-}
-
-// Dequeue removes and returns the next request
-func (q *LockQueue) Dequeue() *QueueRequest {
-	if q.list.Len() == 0 {
-		return nil
-	}
-
-	element := q.list.Front()
-	q.list.Remove(element)
-	req := element.Value.(*QueueRequest)
-	delete(q.requests, req.ID)
-	return req
-}
-
-// Remove removes a specific request by ID
-func (q *LockQueue) Remove(requestID string) *QueueRequest {
-	element, exists := q.requests[requestID]
-	if !exists {
-		return nil
-	}
-
-	delete(q.requests, requestID)
-	q.list.Remove(element)
-	return element.Value.(*QueueRequest)
-}
-
-// GetPosition returns the position of a request in the queue (1-based)
-func (q *LockQueue) GetPosition(requestID string) int {
-	element, exists := q.requests[requestID]
-	if !exists {
-		return -1
-	}
-
-	position := 1
-	for e := q.list.Front(); e != nil; e = e.Next() {
-		if e == element {
-			return position
-		}
-		position++
-	}
-	return -1
-}
-
-// GetNext returns the next request without removing it
-func (q *LockQueue) GetNext() *QueueRequest {
-	if q.list.Len() == 0 {
-		return nil
-	}
-
-	element := q.list.Front()
-	return element.Value.(*QueueRequest)
-}
-
-// Size returns the current queue size
-func (q *LockQueue) Size() int {
-	return q.list.Len()
-}
-
-// CleanExpired removes expired requests and returns the count removed
-// Only removes requests that have been expired for more than 5 seconds
-// to allow polling to detect recently expired requests
-func (q *LockQueue) CleanExpired(now time.Time) int {
-	removed := 0
-	gracePeriod := 5 * time.Second // Allow recently expired requests to be detected
-
-	for e := q.list.Front(); e != nil; {
-		req := e.Value.(*QueueRequest)
-		next := e.Next()
-
-		// Only remove if expired for more than the grace period
-		if now.After(req.TimeoutAt.Add(gracePeriod)) {
-			delete(q.requests, req.ID)
-			q.list.Remove(e)
-			removed++
-		}
-		e = next
-	}
-	return removed
-}
-
-func (l *Lock) IsAvailable() bool {
+func (l *Lock) IsAvailable(now time.Time) bool {
 	if l.OwnerID == "" {
 		return true
 	}
-	now := time.Now()
 	if now.After(l.AcquiredAt.Add(l.MaxTTL)) {
 		return true
 	}
@@ -157,7 +55,6 @@ func (l *Lock) GetOwner() string {
 	return "none"
 }
 
-// NewLockMetrics creates a new metrics instance for a lock
 func NewLockMetrics() *LockMetrics {
 	now := time.Now()
 	return &LockMetrics{
@@ -167,7 +64,6 @@ func NewLockMetrics() *LockMetrics {
 	}
 }
 
-// GetMetrics returns the lock's metrics (thread-safe)
 func (l *Lock) GetMetrics() *LockMetrics {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -176,7 +72,6 @@ func (l *Lock) GetMetrics() *LockMetrics {
 		l.metrics = NewLockMetrics()
 	}
 
-	// Update current metrics
 	l.metrics.CurrentQueueSize = int64(l.getCurrentQueueSize())
 	if !l.Available && l.OwnerID != "" {
 		l.metrics.CurrentHoldTime = time.Since(l.AcquiredAt)
@@ -185,7 +80,6 @@ func (l *Lock) GetMetrics() *LockMetrics {
 	return l.metrics
 }
 
-// recordAcquireAttempt records an acquire attempt
 func (l *Lock) recordAcquireAttempt(success bool) {
 	if l.metrics == nil {
 		l.metrics = NewLockMetrics()
@@ -201,7 +95,6 @@ func (l *Lock) recordAcquireAttempt(success bool) {
 	}
 }
 
-// recordQueueRequest records a queue request
 func (l *Lock) recordQueueRequest() {
 	if l.metrics == nil {
 		l.metrics = NewLockMetrics()
@@ -212,7 +105,6 @@ func (l *Lock) recordQueueRequest() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordQueueTimeout records a queue timeout
 func (l *Lock) recordQueueTimeout() {
 	if l.metrics == nil {
 		return
@@ -222,7 +114,6 @@ func (l *Lock) recordQueueTimeout() {
 	atomic.AddInt64(&l.metrics.CurrentQueueSize, -1)
 }
 
-// recordOwnerChange records when ownership changes
 func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Time, maxSize int) {
 	if l.metrics == nil {
 		l.metrics = NewLockMetrics()
@@ -230,7 +121,6 @@ func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Ti
 
 	atomic.AddInt64(&l.metrics.OwnerChangeCount, 1)
 
-	// Check if this is a new unique owner
 	isUnique := true
 	for _, record := range l.metrics.OwnerHistory {
 		if record.OwnerID == newOwnerID {
@@ -242,9 +132,7 @@ func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Ti
 		atomic.AddInt64(&l.metrics.UniqueOwnersCount, 1)
 	}
 
-	// Record previous owner if lock was held
 	if l.OwnerID != "" && len(l.metrics.OwnerHistory) > 0 {
-		// Update the last record with release time
 		lastIdx := len(l.metrics.OwnerHistory) - 1
 		if l.metrics.OwnerHistory[lastIdx].ReleasedAt == nil {
 			releasedAt := time.Now()
@@ -253,7 +141,6 @@ func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Ti
 		}
 	}
 
-	// Add new owner record
 	record := OwnerRecord{
 		Owner:      newOwner,
 		OwnerID:    newOwnerID,
@@ -261,35 +148,29 @@ func (l *Lock) recordOwnerChange(newOwner, newOwnerID string, acquiredAt time.Ti
 	}
 	l.metrics.OwnerHistory = append(l.metrics.OwnerHistory, record)
 
-	// Keep only last maxSize records to prevent unbounded growth
 	if len(l.metrics.OwnerHistory) > maxSize {
 		l.metrics.OwnerHistory = l.metrics.OwnerHistory[len(l.metrics.OwnerHistory)-maxSize:]
 	}
 }
 
-// recordRelease records a lock release
 func (l *Lock) recordRelease() {
 	if l.metrics == nil {
 		return
 	}
 
-	// Update hold time statistics
 	holdTime := time.Since(l.AcquiredAt)
 	atomic.AddInt64((*int64)(&l.metrics.TotalHoldTime), int64(holdTime))
 
-	// Update average hold time
 	totalHolds := atomic.LoadInt64(&l.metrics.SuccessfulAcquires)
 	if totalHolds > 0 {
 		avgHoldTime := time.Duration(atomic.LoadInt64((*int64)(&l.metrics.TotalHoldTime)) / totalHolds)
 		atomic.StoreInt64((*int64)(&l.metrics.AverageHoldTime), int64(avgHoldTime))
 	}
 
-	// Update max hold time
 	if holdTime > l.metrics.MaxHoldTime {
 		l.metrics.MaxHoldTime = holdTime
 	}
 
-	// Update last owner record
 	if len(l.metrics.OwnerHistory) > 0 {
 		lastIdx := len(l.metrics.OwnerHistory) - 1
 		if l.metrics.OwnerHistory[lastIdx].ReleasedAt == nil {
@@ -302,7 +183,6 @@ func (l *Lock) recordRelease() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordRefresh records a lock refresh
 func (l *Lock) recordRefresh() {
 	if l.metrics == nil {
 		return
@@ -312,7 +192,6 @@ func (l *Lock) recordRefresh() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordTTLExpiration records a TTL expiration
 func (l *Lock) recordTTLExpiration() {
 	if l.metrics == nil {
 		return
@@ -322,7 +201,6 @@ func (l *Lock) recordTTLExpiration() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordMaxTTLExpiration records a Max TTL expiration
 func (l *Lock) recordMaxTTLExpiration() {
 	if l.metrics == nil {
 		return
@@ -332,7 +210,6 @@ func (l *Lock) recordMaxTTLExpiration() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordFailedOperation records a failed operation
 func (l *Lock) recordFailedOperation() {
 	if l.metrics == nil {
 		return
@@ -342,7 +219,6 @@ func (l *Lock) recordFailedOperation() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// recordStaleToken records a stale token error
 func (l *Lock) recordStaleToken() {
 	if l.metrics == nil {
 		return
@@ -353,7 +229,6 @@ func (l *Lock) recordStaleToken() {
 	l.metrics.LastActivityAt = time.Now()
 }
 
-// getCurrentQueueSize returns the current queue size (thread-safe)
 func (l *Lock) getCurrentQueueSize() int {
 	if l.queue == nil {
 		return 0

@@ -46,6 +46,7 @@ func NewTestServer(t *testing.T) *TestServer {
 	coreServer := &core.GlockServer{
 		Capacity: config.Capacity,
 		Locks:    sync.Map{},
+		LockTree: core.NewLockTree(),
 		Config:   config,
 	}
 
@@ -163,7 +164,8 @@ func TestIntegrationBasicLifecycle(t *testing.T) {
 
 	// Verify server state after acquisition
 	serverLockVal, _ := server.Core().Locks.Load("test-lock")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "test-owner" {
 		t.Fatalf("server owner mismatch: expected 'test-owner', got '%s'", serverLock.Owner)
 	}
@@ -193,7 +195,8 @@ func TestIntegrationBasicLifecycle(t *testing.T) {
 
 	// Verify server state after release
 	serverLockVal, _ = server.Core().Locks.Load("test-lock")
-	serverLock = serverLockVal.(*core.Lock)
+	serverNode = serverLockVal.(*core.Node)
+	serverLock = serverNode.Lock
 	if !serverLock.Available {
 		t.Fatal("lock should be available after release")
 	}
@@ -231,7 +234,8 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 
 	// Verify server still shows lock as held by client
 	serverLockVal, _ := server.Core().Locks.Load("heartbeat-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "test-owner" {
 		t.Fatalf("lock should still be held by client after heartbeat")
 	}
@@ -244,7 +248,8 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 
 	// Verify server still shows lock as held (heartbeat should have refreshed)
 	serverLockVal, _ = server.Core().Locks.Load("heartbeat-test")
-	serverLock = serverLockVal.(*core.Lock)
+	serverNode = serverLockVal.(*core.Node)
+	serverLock = serverNode.Lock
 	if serverLock.Owner != "test-owner" {
 		t.Fatalf("lock should still be held by client after heartbeat refresh")
 	}
@@ -258,7 +263,8 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 
 	// Verify lock is now available
 	serverLockVal, _ = server.Core().Locks.Load("heartbeat-test")
-	serverLock = serverLockVal.(*core.Lock)
+	serverNode = serverLockVal.(*core.Node)
+	serverLock = serverNode.Lock
 	if !serverLock.Available {
 		t.Fatal("lock should be available after TTL expiration")
 	}
@@ -308,7 +314,8 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 
 	// Verify server state
 	serverLockVal, _ := server.Core().Locks.Load("queue-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "owner1" {
 		t.Fatalf("server should show lock held by owner1, got %s", serverLock.Owner)
 	}
@@ -343,7 +350,8 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 
 	// Verify server state after queue processing
 	serverLockVal, _ = server.Core().Locks.Load("queue-test")
-	serverLock = serverLockVal.(*core.Lock)
+	serverNode = serverLockVal.(*core.Node)
+	serverLock = serverNode.Lock
 	if serverLock.Owner != "owner2" {
 		t.Fatalf("server should show lock held by owner2, got %s", serverLock.Owner)
 	}
@@ -395,7 +403,8 @@ func TestIntegrationErrorHandling(t *testing.T) {
 
 	// Verify server still shows original owner
 	serverLockVal, _ := server.Core().Locks.Load("double-acquire-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "owner1" {
 		t.Fatalf("server should still show original owner, got %s", serverLock.Owner)
 	}
@@ -414,7 +423,8 @@ func TestIntegrationErrorHandling(t *testing.T) {
 
 	// Verify server state after release
 	serverLockVal, _ = server.Core().Locks.Load("double-acquire-test")
-	serverLock = serverLockVal.(*core.Lock)
+	serverNode = serverLockVal.(*core.Node)
+	serverLock = serverNode.Lock
 	if !serverLock.Available {
 		t.Fatal("lock should be available after release")
 	}
@@ -460,7 +470,8 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 
 			// Verify the successful client owns the lock
 			serverLockVal, _ := server.Core().Locks.Load("concurrent-test")
-			serverLock := serverLockVal.(*core.Lock)
+			serverNode := serverLockVal.(*core.Node)
+			serverLock := serverNode.Lock
 			expectedOwner := fmt.Sprintf("client-%d", result.clientID)
 			if serverLock.Owner != expectedOwner {
 				t.Errorf("server shows wrong owner: expected %s, got %s", expectedOwner, serverLock.Owner)
@@ -491,7 +502,8 @@ func TestIntegrationConcurrentAccess(t *testing.T) {
 	// Additional verification: ensure server shows lock as available after releases
 	time.Sleep(10 * time.Millisecond) // Allow time for release to propagate
 	serverLockVal, _ := server.Core().Locks.Load("concurrent-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if !serverLock.Available {
 		t.Errorf("lock should be available after all releases, but owner is %s", serverLock.Owner)
 	}
@@ -548,7 +560,6 @@ func TestServerSideRaceCondition(t *testing.T) {
 	failureCount := 0
 	queuedCount := 0
 	var successfulClients []int
-	var failedClients []int
 
 	for res := range results {
 		t.Logf("Client %d: code=%d, err=%v", res.clientID, res.code, res.err)
@@ -559,7 +570,6 @@ func TestServerSideRaceCondition(t *testing.T) {
 			queuedCount++
 		} else {
 			failureCount++
-			failedClients = append(failedClients, res.clientID)
 		}
 	}
 
@@ -870,7 +880,8 @@ func TestIntegrationAcquireOrWaitSuccess(t *testing.T) {
 
 	// Verify server state
 	serverLockVal, _ := server.Core().Locks.Load("immediate-acquire-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "test-owner" {
 		t.Fatalf("server should show lock held by test-owner, got %s", serverLock.Owner)
 	}
@@ -940,7 +951,8 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 
 	// Verify server state
 	serverLockVal, _ := server.Core().Locks.Load("queue-wait-test")
-	serverLock := serverLockVal.(*core.Lock)
+	serverNode := serverLockVal.(*core.Node)
+	serverLock := serverNode.Lock
 	if serverLock.Owner != "owner2" {
 		t.Fatalf("server should show lock held by owner2, got %s", serverLock.Owner)
 	}

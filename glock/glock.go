@@ -273,14 +273,12 @@ func (g *Glock) AcquireOrQueue(lockName string) (*Lock, *QueueResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	// Handle different response types
 	var responseBody map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
 		return nil, nil, err
 	}
 
 	if lockData, ok := responseBody["lock"]; ok {
-		// Lock was acquired immediately
 		lockBytes, _ := json.Marshal(lockData)
 		var lock Lock
 		if err := json.Unmarshal(lockBytes, &lock); err != nil {
@@ -293,7 +291,6 @@ func (g *Glock) AcquireOrQueue(lockName string) (*Lock, *QueueResponse, error) {
 	}
 
 	if queueData, ok := responseBody["queue"]; ok {
-		// Lock was queued
 		queueBytes, _ := json.Marshal(queueData)
 		var queueResp QueueResponse
 		if err := json.Unmarshal(queueBytes, &queueResp); err != nil {
@@ -448,33 +445,27 @@ func (g *Glock) RemoveFromQueue(lockName, requestID string) error {
 
 // AcquireOrWait attempts to acquire a lock, waiting up to the specified timeout if queued
 func (g *Glock) AcquireOrWait(lockName string, timeout time.Duration) (*Lock, error) {
-	// First try to acquire or queue
 	lock, queueResp, err := g.AcquireOrQueue(lockName)
 	if err != nil {
 		return nil, err
 	}
 
-	// If we got the lock immediately, return it
 	if lock != nil {
 		return lock, nil
 	}
 
-	// If we got a queue response, poll until timeout
 	if queueResp != nil {
 		startTime := time.Now()
 		pollInterval := 100 * time.Millisecond // Poll every 100ms
 
 		for {
-			// Check if we've exceeded the timeout
 			if time.Since(startTime) > timeout {
-				// Timeout reached, remove from queue
 				if removeErr := g.RemoveFromQueue(lockName, queueResp.RequestID); removeErr != nil {
 					fmt.Printf("Warning: failed to remove expired queue request %s: %v\n", queueResp.RequestID, removeErr)
 				}
 				return nil, fmt.Errorf("timeout waiting for lock after %v", timeout)
 			}
 
-			// Poll for status
 			pollResp, err := g.PollQueue(lockName, queueResp.RequestID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to poll queue: %v", err)
@@ -487,13 +478,10 @@ func (g *Glock) AcquireOrWait(lockName string, timeout time.Duration) (*Lock, er
 				}
 				return pollResp.Lock, nil
 			case "waiting":
-				// Still waiting, sleep and try again
 				time.Sleep(pollInterval)
 			case "expired":
-				// Our request expired
 				return nil, fmt.Errorf("queue request expired")
 			case "not_found":
-				// Our request was removed or never existed
 				return nil, fmt.Errorf("queue request not found")
 			default:
 				return nil, fmt.Errorf("unknown poll status: %s", pollResp.Status)
@@ -528,7 +516,6 @@ func (l *Lock) StartHeartbeat() {
 					fmt.Printf("Heartbeat error for lock %s: %v\n", l.Name, err)
 					continue
 				}
-				// do not defer in loop to avoid accumulating defers
 				if resp.StatusCode != http.StatusOK {
 					fmt.Printf("Heartbeat error for lock %s: server returned status %d\n", l.Name, resp.StatusCode)
 					_ = resp.Body.Close()
@@ -625,10 +612,8 @@ func (l *Lock) Refresh() error {
 
 // Release gracefully releases the lock
 func (l *Lock) Release() error {
-	// Close heartbeat channel safely (idempotent)
 	select {
 	case <-l.heartbeatCh:
-		// Channel already closed
 	default:
 		close(l.heartbeatCh)
 	}

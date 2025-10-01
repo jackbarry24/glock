@@ -11,22 +11,120 @@ import (
 )
 
 type GlockServer struct {
-	Size        int64
-	Capacity    int
-	Locks       sync.Map // Name -> *Lock
-	Config      *Config
-	cleanupDone chan struct{} // Channel to signal cleanup goroutine to stop
+	Size     int64
+	Capacity int
+	Locks    sync.Map // Name -> Tree Node
+	LockTree *LockTree
+	Config   *Config
 }
 
-// generateRequestID creates a unique request ID for queue entries
 func generateRequestID() string {
 	bytes := make([]byte, 16)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
+// reserveLockSlot atomically reserves a slot in the server's capacity.
+// Returns an error if capacity is reached.
+func (g *GlockServer) reserveLockSlot() error {
+	for {
+		currentSize := atomic.LoadInt64(&g.Size)
+		if currentSize >= int64(g.Capacity) {
+			return fmt.Errorf("lock capacity reached")
+		}
+		if atomic.CompareAndSwapInt64(&g.Size, currentSize, currentSize+1) {
+			return nil
+		}
+	}
+}
+
+// releaseLockSlot atomically releases a slot in the server's capacity.
+func (g *GlockServer) releaseLockSlot() {
+	atomic.AddInt64(&g.Size, -1)
+}
+
+// tryGrantFromQueue attempts to grant the lock to the next request in the queue.
+// The lock must be available and the caller must hold lock.mu.
+// Returns true if a lock was granted from the queue.
+// Automatically skips and removes expired requests from the front of the queue.
+func (g *GlockServer) tryGrantFromQueue(node *Node, now time.Time) bool {
+	lock := node.Lock
+	if lock.queue == nil || lock.queue.Size() == 0 {
+		return false
+	}
+
+	if node.IsAnyParentHeld(now) || node.HasHeldDescendants() {
+		return false
+	}
+
+	for {
+		nextReq := lock.queue.PeekNext()
+		if nextReq == nil {
+			return false
+		}
+
+		// If expired, remove and continue to next
+		if now.After(nextReq.TimeoutAt) {
+			lock.queue.Dequeue()
+			continue
+		}
+
+		// Found a valid request, grant the lock
+		lock.queue.Dequeue()
+		g.grantLockOwnership(node, nextReq.Owner, nextReq.OwnerID, now)
+		return true
+	}
+}
+
+// tryGrantFromRelatedQueues attempts to grant locks to related nodes (ancestors and descendants)
+// whose queues may now be unblocked after this node's lock was released.
+func (g *GlockServer) tryGrantFromRelatedQueues(node *Node, now time.Time) {
+	// Get all related nodes that might be unblocked in one pass
+	// Ancestors: may be unblocked if we were blocking them (descendant was held)
+	// Descendants: may be unblocked if we were blocking them (ancestor was held)
+
+	ancestors := node.GetAncestors()
+	descendants := node.GetAllDescendants()
+
+	// Try ancestors first (typically smaller set due to shallow hierarchies)
+	for _, ancestor := range ancestors {
+		if ancestor.Lock != nil {
+			lock := ancestor.Lock
+			lock.mu.Lock()
+			g.tryGrantFromQueue(ancestor, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
+			lock.mu.Unlock()
+		}
+	}
+
+	// Try all descendants (single DFS traversal, pre-allocated slice)
+	for _, descendant := range descendants {
+		if descendant.Lock != nil {
+			lock := descendant.Lock
+			lock.mu.Lock()
+			g.tryGrantFromQueue(descendant, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
+			lock.mu.Unlock()
+		}
+	}
+}
+
+func (g *GlockServer) grantLockOwnership(node *Node, owner, ownerID string, now time.Time) {
+	lock := node.Lock
+	lock.Owner = owner
+	lock.OwnerID = ownerID
+	lock.AcquiredAt = now
+	lock.LastRefresh = now
+	lock.Available = false
+	lock.Token++
+	lock.isHeld.Store(true)
+	lock.recordAcquireAttempt(true)
+	lock.recordOwnerChange(owner, ownerID, now, g.Config.OwnerHistoryMaxSize)
+
+	node.IncrementAncestorCounts()
+}
+
 func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
-	// Parse TTL with default fallback
 	ttlDuration := g.Config.DefaultTTL
 	if req.TTL != "" {
 		var err error
@@ -39,7 +137,6 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		return nil, http.StatusBadRequest, fmt.Errorf("ttl must be greater than zero")
 	}
 
-	// Parse MaxTTL with default fallback
 	maxTTLDuration := g.Config.DefaultMaxTTL
 	if req.MaxTTL != "" {
 		var err error
@@ -56,7 +153,6 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		return nil, http.StatusBadRequest, fmt.Errorf("max_ttl must be greater than or equal to ttl")
 	}
 
-	// Parse QueueTimeout with default fallback
 	queueTimeoutDuration := g.Config.DefaultQueueTimeout
 	if req.QueueTimeout != "" {
 		var err error
@@ -69,28 +165,29 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Validate queue parameters
 	if req.QueueType != "" {
 		switch req.QueueType {
 		case QueueNone, QueueFIFO, QueueLIFO:
-			// Valid queue type
 		default:
 			return nil, http.StatusBadRequest, fmt.Errorf("queue_type must be one of: none, fifo, lifo")
 		}
 	}
 
-	// Atomically check and increment capacity
-	for {
-		currentSize := atomic.LoadInt64(&g.Size)
-		if currentSize >= int64(g.Capacity) {
-			return nil, http.StatusTooManyRequests, fmt.Errorf("lock capacity reached")
+	var parentNode *Node
+	if req.Parent != "" {
+		val, exists := g.Locks.Load(req.Parent)
+		if !exists {
+			return nil, http.StatusBadRequest, fmt.Errorf("parent lock %s does not exist", req.Parent)
 		}
-		if atomic.CompareAndSwapInt64(&g.Size, currentSize, currentSize+1) {
-			break
-		}
+		parentNode = val.(*Node)
+	} else {
+		parentNode = g.LockTree.Root
 	}
 
-	// Set defaults for queue behavior
+	if err := g.reserveLockSlot(); err != nil {
+		return nil, http.StatusTooManyRequests, err
+	}
+
 	queueType := req.QueueType
 	if queueType == "" {
 		queueType = QueueNone
@@ -98,6 +195,7 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 
 	lock := &Lock{
 		Name:         req.Name,
+		Parent:       req.Parent,
 		Owner:        "",
 		OwnerID:      "",
 		AcquiredAt:   time.Time{},
@@ -113,9 +211,10 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 		queue:        NewLockQueue(),
 	}
 
-	if _, loaded := g.Locks.LoadOrStore(req.Name, lock); loaded {
-		// If lock already exists, decrement the size we just incremented
-		atomic.AddInt64(&g.Size, -1)
+	node := NewNode(parentNode, lock)
+
+	if _, loaded := g.Locks.LoadOrStore(req.Name, node); loaded {
+		g.releaseLockSlot()
 		return nil, http.StatusConflict, fmt.Errorf("lock %s already exists", req.Name)
 	}
 
@@ -124,7 +223,6 @@ func (g *GlockServer) CreateLock(req *CreateRequest) (*Lock, int, error) {
 }
 
 func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
-	// Parse TTL if provided
 	var ttlDuration time.Duration
 	if req.TTL != "" {
 		var err error
@@ -137,7 +235,6 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Parse MaxTTL if provided
 	var maxTTLDuration time.Duration
 	if req.MaxTTL != "" {
 		var err error
@@ -150,7 +247,6 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Parse QueueTimeout if provided
 	var queueTimeoutDuration time.Duration
 	if req.QueueTimeout != "" {
 		var err error
@@ -163,41 +259,38 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		}
 	}
 
-	// Validate queue parameters
 	if req.QueueType != "" {
 		switch req.QueueType {
 		case QueueNone, QueueFIFO, QueueLIFO:
-			// Valid queue type
 		default:
 			return nil, http.StatusBadRequest, fmt.Errorf("queue_type must be one of: none, fifo, lifo")
 		}
 	}
 
-	lockVal, exists := g.Locks.Load(req.Name)
+	nodeVal, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock %s does not exist", req.Name)
 	}
-	lock := lockVal.(*Lock)
+	node := nodeVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
-	if !lock.IsAvailable() {
+
+	now := time.Now()
+	if !lock.IsAvailable(now) {
 		return nil, http.StatusConflict, fmt.Errorf("cannot update lock that is currently held")
 	}
 
-	// Update TTL if provided
 	if ttlDuration > 0 {
 		lock.TTL = ttlDuration
 	}
-	// Update MaxTTL if provided
 	if maxTTLDuration > 0 {
 		lock.MaxTTL = maxTTLDuration
 	}
-	// Update metadata if provided
 	if req.Metadata != nil {
 		lock.Metadata = req.Metadata
 	}
 
-	// Update queue settings if provided
 	if req.QueueType != "" {
 		lock.QueueType = req.QueueType
 	}
@@ -205,24 +298,50 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 		lock.QueueTimeout = queueTimeoutDuration
 	}
 
+	if req.Parent != "" && req.Parent != lock.Parent {
+		val, exists := g.Locks.Load(req.Parent)
+		if !exists {
+			return nil, http.StatusBadRequest, fmt.Errorf("parent lock %s does not exist", req.Parent)
+		}
+		newParentNode := val.(*Node)
+
+		if node.WouldCreateCycle(newParentNode) {
+			return nil, http.StatusBadRequest, fmt.Errorf("cannot set parent: would create a cycle in lock hierarchy")
+		}
+
+		if newParentNode.IsAnyParentHeld(now) {
+			return nil, http.StatusConflict, fmt.Errorf("cannot change parent: an ancestor lock is currently held")
+		}
+		lock.Parent = req.Parent
+		node.ChangeParent(newParentNode)
+	}
+
 	lock.QueueSize = lock.getCurrentQueueSize()
 	return lock, http.StatusOK, nil
 }
 
 func (g *GlockServer) DeleteLock(name string) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(name)
+	nodeVal, exists := g.Locks.Load(name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	node := nodeVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
-	if !lock.IsAvailable() {
+
+	now := time.Now()
+	if !lock.IsAvailable(now) {
 		return false, http.StatusConflict, fmt.Errorf("cannot delete lock that is currently held")
 	}
+	if node.IsParentHeld(now) {
+		return false, http.StatusConflict, fmt.Errorf("cannot delete lock: parent lock is currently held")
+	}
+
 	actual, loaded := g.Locks.LoadAndDelete(name)
-	if loaded && actual == lockVal {
-		atomic.AddInt64(&g.Size, -1)
+	if loaded && actual == node {
+		node.Remove()
+		g.releaseLockSlot()
 		return true, http.StatusOK, nil
 	}
 
@@ -230,73 +349,63 @@ func (g *GlockServer) DeleteLock(name string) (bool, int, error) {
 }
 
 func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	nodeVal, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	node := nodeVal.(*Node)
+	lock := node.Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
-	// Use consistent timestamp throughout the method
 	now := time.Now()
 
-	// Clean expired queue entries first (now protected by mutex)
 	if lock.queue != nil {
 		lock.queue.CleanExpired(now)
 	}
 
-	// Check if lock is frozen
 	if lock.Frozen {
 		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be acquired", req.Name)
 	}
 
-	// Check if lock can be acquired (available or expired)
-	canAcquire := lock.OwnerID == "" || // Never owned
-		lock.Available || // Explicitly available
-		now.After(lock.AcquiredAt.Add(lock.MaxTTL)) || // MaxTTL expired
-		now.After(lock.LastRefresh.Add(lock.TTL)) // TTL expired
-
-	if canAcquire {
-		// Lock can be acquired, do it immediately
-		lock.Owner = req.Owner
-		lock.OwnerID = req.OwnerID
-		acquiredAt := time.Now()
-		lock.AcquiredAt = acquiredAt
-		lock.LastRefresh = acquiredAt
-		lock.Available = false
-		lock.Token++
-
-		// Record metrics
-		lock.recordAcquireAttempt(true)
-		lock.recordOwnerChange(req.Owner, req.OwnerID, acquiredAt, g.Config.OwnerHistoryMaxSize)
-
-		return lock, http.StatusOK, nil
+	// Clear atomic flag if lock has expired
+	// We hold the lock's mutex here, so this is safe
+	if lock.isHeld.Load() && lock.IsAvailable(now) {
+		lock.isHeld.Store(false)
 	}
 
-	// Lock is not available, check queue behavior
-	// Default to true if not specified (backwards compatibility)
+	// Check if lock is available (including TTL expiration check)
+	// Also check hierarchy constraints - treat them like the lock being "unavailable"
+	isAvailable := lock.IsAvailable(now) && !node.IsAnyParentHeld(now) && !node.HasHeldDescendants()
+
+	if isAvailable {
+		if lock.queue != nil && lock.queue.Size() > 0 {
+			// Don't grant directly - the request should queue and wait its turn
+		} else {
+			// No queue or empty queue - grant immediately
+			g.grantLockOwnership(node, req.Owner, req.OwnerID, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
+			return lock, http.StatusOK, nil
+		}
+	}
+
 	shouldQueue := true
 	if req.QueueRequest != nil {
 		shouldQueue = *req.QueueRequest
 	}
 
 	if lock.QueueType == QueueNone || !shouldQueue {
-		// Record failed acquire attempt
 		lock.recordAcquireAttempt(false)
 		return nil, http.StatusConflict, fmt.Errorf("lock is held by another owner")
 	}
 
-	// Check if queue is at capacity
 	currentQueueSize := lock.getCurrentQueueSize()
 	if currentQueueSize >= g.Config.QueueMaxSize {
-		// Record failed acquire attempt
 		lock.recordAcquireAttempt(false)
 		return nil, http.StatusTooManyRequests, fmt.Errorf("queue is at maximum capacity (%d)", g.Config.QueueMaxSize)
 	}
 
-	// Add to queue
 	requestID := generateRequestID()
 	queueReq := &QueueRequest{
 		ID:        requestID,
@@ -311,87 +420,52 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 	lock.queue.Enqueue(queueReq, isLIFO)
 	position := lock.queue.GetPosition(requestID)
 
-	// Record metrics
 	lock.recordAcquireAttempt(false)
 	lock.recordQueueRequest()
-
-	// Check if we can immediately acquire the lock (in case TTL just expired)
-	// This handles race conditions where TTL expires between the initial check and queuing
-	if lock.IsAvailable() {
-		nextReq := lock.queue.GetNext()
-		if nextReq != nil && nextReq.ID == requestID {
-			// We can acquire immediately
-			lock.queue.Dequeue()
-			lock.Owner = req.Owner
-			lock.OwnerID = req.OwnerID
-			lock.AcquiredAt = now
-			lock.LastRefresh = now
-			lock.Available = false
-			lock.Token++
-
-			// Update metrics
-			lock.recordAcquireAttempt(true)
-			lock.recordOwnerChange(req.Owner, req.OwnerID, now, g.Config.OwnerHistoryMaxSize)
-			lock.recordQueueTimeout() // Remove from queue count since we're processing it
-
-			return lock, http.StatusOK, nil
-		}
-	}
 
 	queueResp := &QueueResponse{
 		RequestID: requestID,
 		Position:  position,
 	}
 
+	lock.QueueSize = lock.getCurrentQueueSize()
 	return queueResp, http.StatusAccepted, nil
 }
 
 func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return &PollResponse{Status: "not_found"}, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
-	// Use consistent timestamp throughout the method
 	now := time.Now()
 
-	// Clean expired queue entries (but not in PollQueue to allow detection of expired requests)
-	// if lock.queue != nil {
-	// 	lock.queue.CleanExpired(now)
-	// }
-
-	// Check if the lock is already assigned to this requester (happened in ReleaseLock)
-	if !lock.IsAvailable() && lock.OwnerID == req.OwnerID {
+	if !lock.IsAvailable(now) && lock.OwnerID == req.OwnerID {
 		return &PollResponse{
 			Status: "ready",
 			Lock:   lock,
 		}, http.StatusOK, nil
 	}
 
-	// Check if lock is now available and we're first in queue
-	if lock.IsAvailable() && lock.queue != nil {
-		nextReq := lock.queue.GetNext()
+	// Try to grant lock from queue if available and hierarchy constraints are satisfied
+	nodeTyped := node.(*Node)
+	if lock.IsAvailable(now) && !nodeTyped.IsAnyParentHeld(now) && !nodeTyped.HasHeldDescendants() && lock.queue != nil {
+		nextReq := lock.queue.PeekNext()
 		if nextReq != nil && nextReq.ID == req.RequestID && nextReq.OwnerID == req.OwnerID {
 			// Check if the request has expired
 			if now.After(nextReq.TimeoutAt) {
-				// Request expired, remove it and return expired
-				lock.queue.Remove(req.RequestID)
+				lock.queue.Dequeue() // Remove expired request
 				return &PollResponse{Status: "expired"}, http.StatusGone, nil
 			}
 
-			// Remove from queue and acquire lock
+			// Grant the lock to this request
 			lock.queue.Dequeue()
-
-			lock.Owner = nextReq.Owner
-			lock.OwnerID = nextReq.OwnerID
-			lock.AcquiredAt = now
-			lock.LastRefresh = now
-			lock.Available = false
-			lock.Token++
+			g.grantLockOwnership(nodeTyped, nextReq.Owner, nextReq.OwnerID, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
 
 			return &PollResponse{
 				Status: "ready",
@@ -400,35 +474,37 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 		}
 	}
 
-	// Check if our request is still in queue
-	if lock.queue != nil {
-		element, exists := lock.queue.requests[req.RequestID]
-		if exists && element != nil {
-			queueReq := element.Value.(*QueueRequest)
-			position := lock.queue.GetPosition(req.RequestID)
+	if lock.queue != nil && lock.queue.Contains(req.RequestID) {
+		position := lock.queue.GetPosition(req.RequestID)
 
-			// Check if our request has expired
-			if now.After(queueReq.TimeoutAt) {
-				lock.queue.Remove(req.RequestID)
-				return &PollResponse{Status: "expired"}, http.StatusGone, nil
+		var queueReq *QueueRequest
+		for _, r := range lock.queue.GetAll() {
+			if r.ID == req.RequestID {
+				queueReq = r
+				break
 			}
-
-			return &PollResponse{
-				Status:   "waiting",
-				Position: position,
-			}, http.StatusOK, nil
 		}
+
+		if queueReq != nil && now.After(queueReq.TimeoutAt) {
+			lock.queue.Remove(req.RequestID)
+			return &PollResponse{Status: "expired"}, http.StatusGone, nil
+		}
+
+		return &PollResponse{
+			Status:   "waiting",
+			Position: position,
+		}, http.StatusOK, nil
 	}
 
 	return &PollResponse{Status: "not_found"}, http.StatusNotFound, fmt.Errorf("request not found in queue")
 }
 
 func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
@@ -437,7 +513,6 @@ func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
 		return false, http.StatusNotFound, fmt.Errorf("no queue for this lock")
 	}
 
-	// Try to remove the request
 	removed := lock.queue.Remove(req.RequestID)
 	if removed == nil {
 		return false, http.StatusNotFound, fmt.Errorf("request not found in queue")
@@ -447,33 +522,26 @@ func (g *GlockServer) RemoveFromQueue(req *PollRequest) (bool, int, error) {
 }
 
 func (g *GlockServer) ListQueue(req *QueueListRequest) (*QueueListResponse, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
 	if lock.queue == nil {
-		// Return empty list if no queue exists
 		return &QueueListResponse{
 			LockName: req.Name,
 			Requests: []*QueueRequest{},
 		}, http.StatusOK, nil
 	}
 
-	// Clean expired entries first
 	now := time.Now()
 	lock.queue.CleanExpired(now)
 
-	// Collect all requests from the queue
-	requests := make([]*QueueRequest, 0)
-	for e := lock.queue.list.Front(); e != nil; e = e.Next() {
-		req := e.Value.(*QueueRequest)
-		requests = append(requests, req)
-	}
+	requests := lock.queue.GetAll()
 
 	return &QueueListResponse{
 		LockName: req.Name,
@@ -482,15 +550,14 @@ func (g *GlockServer) ListQueue(req *QueueListRequest) (*QueueListResponse, int,
 }
 
 func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return nil, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
-	// Check if lock is frozen
 	if lock.Frozen {
 		lock.recordFailedOperation()
 		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be refreshed", req.Name)
@@ -514,8 +581,6 @@ func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 		return nil, http.StatusConflict, fmt.Errorf("another client has acquired this lock")
 	}
 	lock.LastRefresh = now
-
-	// Record successful refresh
 	lock.recordRefresh()
 
 	lock.QueueSize = lock.getCurrentQueueSize()
@@ -523,11 +588,11 @@ func (g *GlockServer) RefreshLock(req *RefreshRequest) (*Lock, int, error) {
 }
 
 func (g *GlockServer) VerifyLock(req *VerifyRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	node, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	lock := node.(*Node).Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if lock.OwnerID != req.OwnerID {
@@ -547,106 +612,40 @@ func (g *GlockServer) VerifyLock(req *VerifyRequest) (bool, int, error) {
 	return true, http.StatusOK, nil
 }
 
-// processQueueForAvailableLock checks if a lock is available and grants it to the next queued client
-func (g *GlockServer) processQueueForAvailableLock(lock *Lock) bool {
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
-
-	// Check if lock is available and has a queue
-	if !lock.IsAvailable() || lock.queue == nil || lock.queue.Size() == 0 {
+// checkAndGrantFromQueue checks if a lock is available (including TTL expiration and hierarchy)
+// and automatically grants it to the next queued request if one exists.
+// The caller must hold lock.mu.
+// Returns true if the lock was granted from the queue.
+func (g *GlockServer) checkAndGrantFromQueue(node *Node, now time.Time) bool {
+	lock := node.Lock
+	if !lock.IsAvailable(now) {
 		return false
 	}
 
-	// Find the next non-expired request
-	var nextOwner *QueueRequest
-	if front := lock.queue.list.Front(); front != nil {
-		candidate := front.Value.(*QueueRequest)
-		if time.Now().Before(candidate.TimeoutAt) {
-			// Request is not expired, dequeue it
-			nextOwner = lock.queue.Dequeue()
-		}
-	}
-
-	if nextOwner == nil {
+	// Check hierarchy constraints
+	if node.IsAnyParentHeld(now) || node.HasHeldDescendants() {
 		return false
 	}
 
-	// Grant the lock to the next client
-	acquiredAt := time.Now()
-	lock.Owner = nextOwner.Owner
-	lock.OwnerID = nextOwner.OwnerID
-	lock.AcquiredAt = acquiredAt
-	lock.LastRefresh = acquiredAt
-	lock.Available = false
-	lock.Token++
-
-	// Record metrics for new owner
-	lock.recordAcquireAttempt(true)
-	lock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, acquiredAt, g.Config.OwnerHistoryMaxSize)
-	lock.recordQueueTimeout() // Remove from queue count since it's being processed
-
-	return true
-}
-
-// StartCleanupGoroutine starts a background goroutine that periodically cleans up expired locks
-func (g *GlockServer) StartCleanupGoroutine() {
-	g.cleanupDone = make(chan struct{})
-	go g.cleanupWorker()
-}
-
-// StopCleanupGoroutine stops the cleanup goroutine
-func (g *GlockServer) StopCleanupGoroutine() {
-	if g.cleanupDone != nil {
-		close(g.cleanupDone)
+	// Lock is available and hierarchy is clear, try to grant it from the queue
+	if g.tryGrantFromQueue(node, now) {
+		lock.QueueSize = lock.getCurrentQueueSize()
+		return true
 	}
-}
 
-// cleanupWorker runs in a background goroutine and periodically processes expired locks
-func (g *GlockServer) cleanupWorker() {
-	ticker := time.NewTicker(g.Config.CleanupInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			g.processExpiredLocks()
-		case <-g.cleanupDone:
-			return
-		}
-	}
-}
-
-// processExpiredLocks checks all locks for TTL expiration and processes their queues
-func (g *GlockServer) processExpiredLocks() {
-	g.Locks.Range(func(key, value interface{}) bool {
-		lockName := key.(string)
-		lock := value.(*Lock)
-
-		// Process the queue if the lock is available due to TTL expiration
-		if g.processQueueForAvailableLock(lock) {
-			// Lock was granted to a queued client, update in map
-			g.Locks.Store(lockName, lock)
-		}
-
-		// Clean expired queue entries
-		if lock.queue != nil {
-			lock.queue.CleanExpired(time.Now())
-		}
-
-		return true // continue iteration
-	})
+	return false
 }
 
 func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
-	lockVal, exists := g.Locks.Load(req.Name)
+	nodeVal, exists := g.Locks.Load(req.Name)
 	if !exists {
 		return false, http.StatusNotFound, fmt.Errorf("lock not found")
 	}
-	lock := lockVal.(*Lock)
+	node := nodeVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
-	// Use consistent timestamp throughout the method
 	now := time.Now()
 
 	if lock.OwnerID != req.OwnerID {
@@ -658,59 +657,24 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 		return false, http.StatusConflict, fmt.Errorf("another client has acquired this lock")
 	}
 
-	// Check if there's someone waiting in queue
-	var nextOwner *QueueRequest
-	if lock.queue != nil {
-		// Find the next non-expired request without removing expired ones
-		if lock.queue.Size() > 0 {
-			// Peek at the front of the queue
-			if front := lock.queue.list.Front(); front != nil {
-				candidate := front.Value.(*QueueRequest)
-				if now.Before(candidate.TimeoutAt) {
-					// Request is not expired, dequeue it
-					nextOwner = lock.queue.Dequeue()
-				}
-				// If expired, leave it in queue so polling can detect it
-			}
-		}
-	}
-
-	// Record release metrics before creating new lock
 	lock.recordRelease()
 
-	newLock := Lock{
-		Name:         lock.Name,
-		Owner:        "",
-		OwnerID:      "",
-		AcquiredAt:   time.Time{},
-		LastRefresh:  time.Time{},
-		Available:    true,
-		Token:        lock.Token, // Preserve the fencing token
-		TTL:          lock.TTL,
-		MaxTTL:       lock.MaxTTL,
-		Metadata:     lock.Metadata,
-		QueueType:    lock.QueueType,
-		QueueTimeout: lock.QueueTimeout,
-		queue:        lock.queue, // Transfer the queue
-		mu:           sync.Mutex{},
-		metrics:      lock.metrics, // Transfer metrics
-	}
+	// Decrement ancestor counts since this lock is being released
+	node.DecrementAncestorCounts()
 
-	// If there's someone in queue, immediately assign the lock to them
-	if nextOwner != nil {
-		newLock.Owner = nextOwner.Owner
-		newLock.OwnerID = nextOwner.OwnerID
-		newLock.AcquiredAt = now
-		newLock.LastRefresh = now
-		newLock.Available = false
-		newLock.Token++
+	lock.Owner = ""
+	lock.OwnerID = ""
+	lock.AcquiredAt = time.Time{}
+	lock.LastRefresh = time.Time{}
+	lock.Available = true
+	lock.isHeld.Store(false) // Clear atomic flag for race-free hierarchy checks
 
-		// Record metrics for new owner
-		newLock.recordAcquireAttempt(true)
-		newLock.recordOwnerChange(nextOwner.Owner, nextOwner.OwnerID, now, g.Config.OwnerHistoryMaxSize)
-		newLock.recordQueueTimeout() // Remove from queue count since it's being processed
-	}
+	// Try to grant from this lock's queue
+	g.tryGrantFromQueue(node, now)
 
-	g.Locks.Store(req.Name, &newLock)
+	// Also try to grant from children and parent queues since hierarchy constraints may have cleared
+	g.tryGrantFromRelatedQueues(node, now)
+
+	lock.QueueSize = lock.getCurrentQueueSize()
 	return true, http.StatusOK, nil
 }

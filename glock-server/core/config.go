@@ -12,23 +12,18 @@ import (
 // Config holds all configuration for the glock server
 // @Description Config holds all configuration for the glock server
 type Config struct {
-	// Server configuration
 	Port int    `yaml:"port" json:"port" example:"8080"`
 	Host string `yaml:"host" json:"host" example:"localhost"`
 
-	// Lock configuration
 	Capacity            int           `yaml:"capacity" json:"capacity" example:"1000"`
 	DefaultTTL          time.Duration `yaml:"default_ttl" json:"default_ttl" swaggertype:"string" example:"30s"`
 	DefaultMaxTTL       time.Duration `yaml:"default_max_ttl" json:"default_max_ttl" swaggertype:"string" example:"5m"`
 	DefaultQueueTimeout time.Duration `yaml:"default_queue_timeout" json:"default_queue_timeout" swaggertype:"string" example:"5m"`
 
-	// Metrics configuration
 	OwnerHistoryMaxSize int `yaml:"owner_history_max_size" json:"owner_history_max_size" example:"100"`
 
-	// Queue configuration
 	QueueMaxSize int `yaml:"queue_max_size" json:"queue_max_size" example:"1024"`
 
-	// Cleanup configuration
 	CleanupInterval time.Duration `yaml:"cleanup_interval" json:"cleanup_interval" swaggertype:"string" example:"30s"`
 }
 
@@ -168,19 +163,16 @@ func (c *Config) Validate() error {
 func LoadConfig(yamlFile string) (*Config, error) {
 	config := DefaultConfig()
 
-	// Load from YAML file if provided
 	if yamlFile != "" {
 		if err := config.LoadFromYAML(yamlFile); err != nil {
 			return nil, err
 		}
 	}
 
-	// Load from environment variables (overrides YAML)
 	if err := config.LoadFromEnv(); err != nil {
 		return nil, err
 	}
 
-	// Validate the final configuration
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}

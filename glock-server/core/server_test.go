@@ -13,6 +13,7 @@ func newServer(capacity int) *GlockServer {
 	return &GlockServer{
 		Capacity: capacity,
 		Locks:    sync.Map{},
+		LockTree: NewLockTree(),
 		Config:   config,
 	}
 }
@@ -516,8 +517,8 @@ func TestRemoveFromQueueSuccess(t *testing.T) {
 
 	// Manually add to queue for testing
 	lockVal, _ := g.Locks.Load("remove-test-lock")
-	testLock := lockVal.(*Lock)
-	testLock.queue.Enqueue(queueReq, false)
+	node := lockVal.(*Node)
+	node.Lock.queue.Enqueue(queueReq, false)
 
 	// Now try to remove it
 	removed, code, err := g.RemoveFromQueue(&PollRequest{
@@ -595,10 +596,7 @@ func TestTTLExpirationQueueProcessing(t *testing.T) {
 	// 3. Wait for TTL to expire
 	time.Sleep(100 * time.Millisecond) // Wait longer than TTL
 
-	// 4. Manually trigger the cleanup process (simulating the background goroutine)
-	g.processExpiredLocks()
-
-	// 5. Check if client2 got the lock
+	// 4. Poll to check - this will automatically detect TTL expiration and grant the lock
 	pollResp2, code3, err3 := g.PollQueue(&PollRequest{
 		Name:      "ttl-test-lock",
 		RequestID: requestID,
@@ -627,33 +625,30 @@ func TestTTLExpirationQueueProcessing(t *testing.T) {
 	}
 }
 
-// TestBackgroundCleanupGoroutine tests that the background cleanup works
-func TestBackgroundCleanupGoroutine(t *testing.T) {
+// TestQueueHandoffOnTTLExpiration tests that when a lock's TTL expires,
+// the next queued client automatically gets it when they poll
+func TestQueueHandoffOnTTLExpiration(t *testing.T) {
 	g := newServer(10)
 
 	// Create a lock with short TTL
 	_, _, _ = g.CreateLock(&CreateRequest{
-		Name:         "bg-cleanup-test",
+		Name:         "ttl-handoff-test",
 		TTL:          "10ms",
 		MaxTTL:       "100ms",
 		QueueType:    QueueFIFO,
 		QueueTimeout: "1s",
 	})
 
-	// Start the cleanup goroutine
-	g.StartCleanupGoroutine()
-	defer g.StopCleanupGoroutine()
-
 	// Acquire lock
 	_, _, _ = g.AcquireLock(&AcquireRequest{
-		Name:    "bg-cleanup-test",
+		Name:    "ttl-handoff-test",
 		Owner:   "owner1",
 		OwnerID: "11111111-1111-1111-1111-111111111111",
 	})
 
 	// Queue another client
 	result, code, err := g.AcquireLock(&AcquireRequest{
-		Name:    "bg-cleanup-test",
+		Name:    "ttl-handoff-test",
 		Owner:   "owner2",
 		OwnerID: "22222222-2222-2222-2222-222222222222",
 	})
@@ -662,21 +657,22 @@ func TestBackgroundCleanupGoroutine(t *testing.T) {
 	}
 	queueResp := result.(*QueueResponse)
 
-	// Wait for TTL to expire and background cleanup to run
-	time.Sleep(200 * time.Millisecond) // Wait for cleanup interval (30s default, but should be fast in test)
+	// Wait for TTL to expire
+	time.Sleep(50 * time.Millisecond)
 
-	// Poll to see if we got the lock
+	// Poll - this should detect the expired TTL and grant the lock automatically
 	pollResp, code2, _ := g.PollQueue(&PollRequest{
-		Name:      "bg-cleanup-test",
+		Name:      "ttl-handoff-test",
 		RequestID: queueResp.RequestID,
 		OwnerID:   "22222222-2222-2222-2222-222222222222",
 	})
 
-	// Should either get the lock or be told it's ready
-	if code2 == http.StatusOK && pollResp.Status == "ready" && pollResp.Lock != nil {
-		if pollResp.Lock.Owner != "owner2" {
-			t.Fatalf("expected owner2 to get the lock, got %s", pollResp.Lock.Owner)
-		}
+	// Should get the lock immediately because first owner's TTL expired
+	if code2 != http.StatusOK || pollResp.Status != "ready" || pollResp.Lock == nil {
+		t.Fatalf("expected to get the lock, got status=%s code=%d", pollResp.Status, code2)
+	}
+	if pollResp.Lock.Owner != "owner2" {
+		t.Fatalf("expected owner2 to get the lock, got %s", pollResp.Lock.Owner)
 	}
 }
 
@@ -783,13 +779,13 @@ func TestQueueMaxSize(t *testing.T) {
 	if !exists {
 		t.Fatalf("lock should still exist")
 	}
-	currentLock := currentLockVal.(*Lock)
-	if currentLock.Owner != "client2" {
-		t.Fatalf("expected client2 to get the lock after release, got %s", currentLock.Owner)
+	currentNode := currentLockVal.(*Node)
+	if currentNode.Lock.Owner != "client2" {
+		t.Fatalf("expected client2 to get the lock after release, got %s", currentNode.Lock.Owner)
 	}
 
 	// 8. Verify queue size is now 1 (client3 still waiting)
-	finalQueueSize = currentLock.getCurrentQueueSize()
+	finalQueueSize = currentNode.Lock.getCurrentQueueSize()
 	if finalQueueSize != 1 {
 		t.Fatalf("expected final queue size 1 (client3 still waiting), got %d", finalQueueSize)
 	}

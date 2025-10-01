@@ -7,7 +7,7 @@ import (
 
 func TestIsAvailable_NoOwner(t *testing.T) {
 	l := &Lock{OwnerID: ""}
-	if !l.IsAvailable() {
+	if !l.IsAvailable(time.Now()) {
 		t.Fatalf("expected available when no owner")
 	}
 }
@@ -18,7 +18,7 @@ func TestIsAvailable_TTLExpired(t *testing.T) {
 		LastRefresh: time.Now().Add(-2 * time.Second),
 		TTL:         time.Second,
 	}
-	if !l.IsAvailable() {
+	if !l.IsAvailable(time.Now()) {
 		t.Fatalf("expected available when TTL expired")
 	}
 }
@@ -29,7 +29,7 @@ func TestIsAvailable_MaxTTLExpired(t *testing.T) {
 		AcquiredAt: time.Now().Add(-2 * time.Second),
 		MaxTTL:     time.Second,
 	}
-	if !l.IsAvailable() {
+	if !l.IsAvailable(time.Now()) {
 		t.Fatalf("expected available when MaxTTL expired")
 	}
 }
@@ -43,7 +43,7 @@ func TestIsAvailable_HeldAndNotExpired(t *testing.T) {
 		MaxTTL:      time.Hour,
 		Available:   false,
 	}
-	if l.IsAvailable() {
+	if l.IsAvailable(time.Now()) {
 		t.Fatalf("expected not available when held and not expired")
 	}
 }
