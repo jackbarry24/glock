@@ -27,6 +27,7 @@ type Lock struct {
 	queue        *LockQueue    `json:"-"`
 	mu           sync.Mutex    `json:"-"`
 	metrics      *LockMetrics  `json:"-"`
+	isHeld       atomic.Bool   `json:"-"`
 }
 
 // LockQueue is now defined in queue.go

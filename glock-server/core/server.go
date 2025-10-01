@@ -53,7 +53,10 @@ func (g *GlockServer) tryGrantFromQueue(node *Node, now time.Time) bool {
 		return false
 	}
 
-	// Skip expired requests at the front of the queue
+	if node.IsAnyParentHeld(now) || node.HasHeldDescendants() {
+		return false
+	}
+
 	for {
 		nextReq := lock.queue.PeekNext()
 		if nextReq == nil {
@@ -69,8 +72,40 @@ func (g *GlockServer) tryGrantFromQueue(node *Node, now time.Time) bool {
 		// Found a valid request, grant the lock
 		lock.queue.Dequeue()
 		g.grantLockOwnership(node, nextReq.Owner, nextReq.OwnerID, now)
-		lock.recordQueueTimeout()
 		return true
+	}
+}
+
+// tryGrantFromRelatedQueues attempts to grant locks to related nodes (ancestors and descendants)
+// whose queues may now be unblocked after this node's lock was released.
+func (g *GlockServer) tryGrantFromRelatedQueues(node *Node, now time.Time) {
+	// Get all related nodes that might be unblocked in one pass
+	// Ancestors: may be unblocked if we were blocking them (descendant was held)
+	// Descendants: may be unblocked if we were blocking them (ancestor was held)
+
+	ancestors := node.GetAncestors()
+	descendants := node.GetAllDescendants()
+
+	// Try ancestors first (typically smaller set due to shallow hierarchies)
+	for _, ancestor := range ancestors {
+		if ancestor.Lock != nil {
+			lock := ancestor.Lock
+			lock.mu.Lock()
+			g.tryGrantFromQueue(ancestor, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
+			lock.mu.Unlock()
+		}
+	}
+
+	// Try all descendants (single DFS traversal, pre-allocated slice)
+	for _, descendant := range descendants {
+		if descendant.Lock != nil {
+			lock := descendant.Lock
+			lock.mu.Lock()
+			g.tryGrantFromQueue(descendant, now)
+			lock.QueueSize = lock.getCurrentQueueSize()
+			lock.mu.Unlock()
+		}
 	}
 }
 
@@ -82,10 +117,10 @@ func (g *GlockServer) grantLockOwnership(node *Node, owner, ownerID string, now 
 	lock.LastRefresh = now
 	lock.Available = false
 	lock.Token++
+	lock.isHeld.Store(true)
 	lock.recordAcquireAttempt(true)
 	lock.recordOwnerChange(owner, ownerID, now, g.Config.OwnerHistoryMaxSize)
-	
-	// Increment ancestor counts to track held descendants
+
 	node.IncrementAncestorCounts()
 }
 
@@ -269,6 +304,11 @@ func (g *GlockServer) UpdateLock(req *UpdateRequest) (*Lock, int, error) {
 			return nil, http.StatusBadRequest, fmt.Errorf("parent lock %s does not exist", req.Parent)
 		}
 		newParentNode := val.(*Node)
+
+		if node.WouldCreateCycle(newParentNode) {
+			return nil, http.StatusBadRequest, fmt.Errorf("cannot set parent: would create a cycle in lock hierarchy")
+		}
+
 		if newParentNode.IsAnyParentHeld(now) {
 			return nil, http.StatusConflict, fmt.Errorf("cannot change parent: an ancestor lock is currently held")
 		}
@@ -329,20 +369,17 @@ func (g *GlockServer) AcquireLock(req *AcquireRequest) (interface{}, int, error)
 		return nil, http.StatusForbidden, fmt.Errorf("lock %s is frozen and cannot be acquired", req.Name)
 	}
 
-	if node.IsAnyParentHeld(now) {
-		lock.recordAcquireAttempt(false)
-		return nil, http.StatusConflict, fmt.Errorf("cannot acquire lock: an ancestor lock is currently held")
-	}
-
-	if node.HasHeldDescendants() {
-		lock.recordAcquireAttempt(false)
-		return nil, http.StatusConflict, fmt.Errorf("cannot acquire lock: a descendant lock is currently held")
+	// Clear atomic flag if lock has expired
+	// We hold the lock's mutex here, so this is safe
+	if lock.isHeld.Load() && lock.IsAvailable(now) {
+		lock.isHeld.Store(false)
 	}
 
 	// Check if lock is available (including TTL expiration check)
-	// If available and queue exists, automatically grant to next in queue first
-	if lock.IsAvailable(now) {
-		// If there's a queue, try to grant from it first (fairness)
+	// Also check hierarchy constraints - treat them like the lock being "unavailable"
+	isAvailable := lock.IsAvailable(now) && !node.IsAnyParentHeld(now) && !node.HasHeldDescendants()
+
+	if isAvailable {
 		if lock.queue != nil && lock.queue.Size() > 0 {
 			// Don't grant directly - the request should queue and wait its turn
 		} else {
@@ -414,8 +451,9 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 		}, http.StatusOK, nil
 	}
 
-	// Try to grant lock from queue if available
-	if lock.IsAvailable(now) && lock.queue != nil {
+	// Try to grant lock from queue if available and hierarchy constraints are satisfied
+	nodeTyped := node.(*Node)
+	if lock.IsAvailable(now) && !nodeTyped.IsAnyParentHeld(now) && !nodeTyped.HasHeldDescendants() && lock.queue != nil {
 		nextReq := lock.queue.PeekNext()
 		if nextReq != nil && nextReq.ID == req.RequestID && nextReq.OwnerID == req.OwnerID {
 			// Check if the request has expired
@@ -426,7 +464,6 @@ func (g *GlockServer) PollQueue(req *PollRequest) (*PollResponse, int, error) {
 
 			// Grant the lock to this request
 			lock.queue.Dequeue()
-			nodeTyped := node.(*Node)
 			g.grantLockOwnership(nodeTyped, nextReq.Owner, nextReq.OwnerID, now)
 			lock.QueueSize = lock.getCurrentQueueSize()
 
@@ -575,7 +612,7 @@ func (g *GlockServer) VerifyLock(req *VerifyRequest) (bool, int, error) {
 	return true, http.StatusOK, nil
 }
 
-// checkAndGrantFromQueue checks if a lock is available (including TTL expiration)
+// checkAndGrantFromQueue checks if a lock is available (including TTL expiration and hierarchy)
 // and automatically grants it to the next queued request if one exists.
 // The caller must hold lock.mu.
 // Returns true if the lock was granted from the queue.
@@ -585,7 +622,12 @@ func (g *GlockServer) checkAndGrantFromQueue(node *Node, now time.Time) bool {
 		return false
 	}
 
-	// Lock is available, try to grant it from the queue
+	// Check hierarchy constraints
+	if node.IsAnyParentHeld(now) || node.HasHeldDescendants() {
+		return false
+	}
+
+	// Lock is available and hierarchy is clear, try to grant it from the queue
 	if g.tryGrantFromQueue(node, now) {
 		lock.QueueSize = lock.getCurrentQueueSize()
 		return true
@@ -625,8 +667,13 @@ func (g *GlockServer) ReleaseLock(req *ReleaseRequest) (bool, int, error) {
 	lock.AcquiredAt = time.Time{}
 	lock.LastRefresh = time.Time{}
 	lock.Available = true
+	lock.isHeld.Store(false) // Clear atomic flag for race-free hierarchy checks
 
+	// Try to grant from this lock's queue
 	g.tryGrantFromQueue(node, now)
+
+	// Also try to grant from children and parent queues since hierarchy constraints may have cleared
+	g.tryGrantFromRelatedQueues(node, now)
 
 	lock.QueueSize = lock.getCurrentQueueSize()
 	return true, http.StatusOK, nil
