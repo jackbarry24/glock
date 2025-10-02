@@ -738,7 +738,7 @@ func TestParentChildMultiLevelQueueing(t *testing.T) {
 	rootLock := result.(*Lock)
 
 	// Try to acquire mid - should queue
-	result, code, _ = g.AcquireLock(&AcquireRequest{
+	_, code, _ = g.AcquireLock(&AcquireRequest{
 		Name:    "mid",
 		Owner:   "owner2",
 		OwnerID: "22222222-2222-2222-2222-222222222222",
@@ -748,7 +748,7 @@ func TestParentChildMultiLevelQueueing(t *testing.T) {
 	}
 
 	// Try to acquire leaf - should also queue
-	result, code, _ = g.AcquireLock(&AcquireRequest{
+	_, code, _ = g.AcquireLock(&AcquireRequest{
 		Name:    "leaf",
 		Owner:   "owner3",
 		OwnerID: "33333333-3333-3333-3333-333333333333",

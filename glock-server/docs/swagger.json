@@ -7,7 +7,7 @@
         "version": "1.0"
     },
     "host": "localhost:8080",
-    "basePath": "/",
+    "basePath": "/api",
     "paths": {
         "/acquire": {
             "post": {
@@ -884,12 +884,10 @@
             "type": "object",
             "properties": {
                 "capacity": {
-                    "description": "Lock configuration",
                     "type": "integer",
                     "example": 1000
                 },
                 "cleanup_interval": {
-                    "description": "Cleanup configuration",
                     "type": "string",
                     "example": "30s"
                 },
@@ -910,17 +908,14 @@
                     "example": "localhost"
                 },
                 "owner_history_max_size": {
-                    "description": "Metrics configuration",
                     "type": "integer",
                     "example": 100
                 },
                 "port": {
-                    "description": "Server configuration",
                     "type": "integer",
                     "example": 8080
                 },
                 "queue_max_size": {
-                    "description": "Queue configuration",
                     "type": "integer",
                     "example": 1024
                 }
@@ -943,6 +938,10 @@
                 "name": {
                     "type": "string",
                     "example": "my-lock"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "/parent-lock"
                 },
                 "queue_timeout": {
                     "type": "string",
@@ -1005,6 +1004,10 @@
                 "owner_id": {
                     "type": "string",
                     "example": "uuid-123"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "/parent-lock"
                 },
                 "queue_size": {
                     "type": "integer",
@@ -1329,6 +1332,9 @@
                 },
                 "metadata": {},
                 "name": {
+                    "type": "string"
+                },
+                "parent": {
                     "type": "string"
                 },
                 "queue_timeout": {

@@ -168,11 +168,12 @@ func (g *Glock) Acquire(lockName string) (*Lock, error) {
 }
 
 // CreateLock creates a new lock with queue configuration
-func (g *Glock) CreateLock(name string, ttl, maxTTL string, queueType QueueBehavior, queueTimeout string) error {
+func (g *Glock) CreateLock(name string, ttl, maxTTL string, parent string, queueType QueueBehavior, queueTimeout string) error {
 	req := CreateRequest{
 		Name:         name,
 		TTL:          ttl,
 		MaxTTL:       maxTTL,
+		Parent:       parent,
 		QueueType:    queueType,
 		QueueTimeout: queueTimeout,
 	}
@@ -196,11 +197,12 @@ func (g *Glock) CreateLock(name string, ttl, maxTTL string, queueType QueueBehav
 }
 
 // UpdateLock updates an existing lock's configuration
-func (g *Glock) UpdateLock(name string, ttl, maxTTL string, queueType QueueBehavior, queueTimeout string, metadata any) error {
+func (g *Glock) UpdateLock(name string, ttl, maxTTL string, parent string, queueType QueueBehavior, queueTimeout string, metadata any) error {
 	req := UpdateRequest{
 		Name:         name,
 		TTL:          ttl,
 		MaxTTL:       maxTTL,
+		Parent:       parent,
 		QueueType:    queueType,
 		QueueTimeout: queueTimeout,
 		Metadata:     metadata,
@@ -225,11 +227,12 @@ func (g *Glock) UpdateLock(name string, ttl, maxTTL string, queueType QueueBehav
 }
 
 // CreateLockWithMetadata creates a new lock with full configuration including metadata
-func (g *Glock) CreateLockWithMetadata(name string, ttl, maxTTL string, queueType QueueBehavior, queueTimeout string, metadata any) error {
+func (g *Glock) CreateLockWithMetadata(name string, ttl, maxTTL string, parent string, queueType QueueBehavior, queueTimeout string, metadata any) error {
 	req := CreateRequest{
 		Name:         name,
 		TTL:          ttl,
 		MaxTTL:       maxTTL,
+		Parent:       parent,
 		QueueType:    queueType,
 		QueueTimeout: queueTimeout,
 		Metadata:     metadata,

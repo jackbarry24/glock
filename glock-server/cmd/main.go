@@ -19,7 +19,7 @@ import (
 // @description In-memory lock queue
 
 // @host localhost:8080
-// @BasePath /
+// @BasePath /api
 func main() {
 	configFile := os.Getenv("GLOCK_CONFIG_FILE")
 	config, err := core.LoadConfig(configFile)

@@ -97,7 +97,8 @@ function formatStatus(lock, ancestorInfo = { isBlocked: false }) {
 function formatOwner(lock, ancestorInfo = { isBlocked: false }) {
     // If blocked by parent, show parent owner info
     if (ancestorInfo.isBlocked) {
-        return `<span class="owner-blocked" title="Blocked by parent: ${escapeHtml(ancestorInfo.blockedBy)}">— (${escapeHtml(ancestorInfo.blockedByOwner)})</span>`;
+        const blockedOwnerShort = ancestorInfo.blockedByOwner ? ancestorInfo.blockedByOwner.split('-')[0] : '';
+        return `<span class="owner-blocked" title="Blocked by parent: ${escapeHtml(ancestorInfo.blockedBy)} (${escapeHtml(ancestorInfo.blockedByOwner)})">— (${escapeHtml(blockedOwnerShort)})</span>`;
     }
 
     // If lock is frozen or available, show "-" instead of owner
@@ -105,8 +106,14 @@ function formatOwner(lock, ancestorInfo = { isBlocked: false }) {
         return '<span class="owner-none">-</span>';
     }
 
-    const displayName = lock.owner || lock.owner_id;
-    return `<strong>${escapeHtml(displayName)}</strong>`;
+    // Get full owner info for tooltip
+    const fullOwnerId = lock.owner_id || '';
+    const fullOwner = lock.owner || lock.owner_id;
+
+    // Display only first segment of UUID
+    const displayName = fullOwnerId ? fullOwnerId.split('-')[0] : (lock.owner || lock.owner_id);
+
+    return `<strong title="${escapeHtml(fullOwner)}">${escapeHtml(displayName)}</strong>`;
 }
 
 // Format queue information
@@ -143,6 +150,11 @@ function generateActionButtons(lock, ancestorInfo = { isBlocked: false }) {
     const metricsBtn = `<button class="metrics-btn" data-lock-name="${lock.name}" title="View metrics">Metrics</button>`;
     actions.push(metricsBtn);
 
+    // Acquire button (only if not currently held and not blocked)
+    if (!lock.owner_id && !ancestorInfo.isBlocked && !lock.frozen) {
+        actions.push(`<button class="btn btn-success btn-sm action-btn acquire-btn" data-lock-name="${lock.name}">Acquire</button>`);
+    }
+
     // Update button (always available for existing locks)
     actions.push(`<button class="btn btn-primary btn-sm action-btn update-btn" data-lock-name="${lock.name}">Update</button>`);
 
@@ -164,6 +176,15 @@ function generateActionButtons(lock, ancestorInfo = { isBlocked: false }) {
     }
 
     return actions.join(' ');
+}
+
+// Generate a random UUID v4
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }
 
 // Escape HTML to prevent XSS
@@ -319,6 +340,7 @@ window.Utils = {
     formatQueueInfo,
     formatTTL,
     generateActionButtons,
+    generateUUID,
     escapeHtml,
     showLoading,
     hideLoading,

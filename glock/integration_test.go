@@ -142,7 +142,7 @@ func TestIntegrationBasicLifecycle(t *testing.T) {
 	}
 
 	// Test create lock
-	err = client.CreateLock("test-lock", "30s", "5m", QueueNone, "1m")
+	err = client.CreateLock("test-lock", "30s", "5m", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestIntegrationHeartbeatMechanism(t *testing.T) {
 	}
 
 	// Create and acquire lock with short TTL
-	err = client.CreateLock("heartbeat-test", "100ms", "1s", QueueNone, "1m")
+	err = client.CreateLock("heartbeat-test", "100ms", "1s", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestIntegrationQueueFunctionality(t *testing.T) {
 	}
 
 	// Create lock with FIFO queue
-	err = client1.CreateLock("queue-test", "1s", "5m", QueueFIFO, "10s")
+	err = client1.CreateLock("queue-test", "1s", "5m", "", QueueFIFO, "10s")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestIntegrationErrorHandling(t *testing.T) {
 	}
 
 	// Test double acquisition (should fail)
-	err = client.CreateLock("double-acquire-test", "1s", "5m", QueueNone, "1m")
+	err = client.CreateLock("double-acquire-test", "1s", "5m", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -717,13 +717,13 @@ func TestIntegrationNewFeatures(t *testing.T) {
 		"description": "test lock",
 		"priority":    1,
 	}
-	err = client.CreateLockWithMetadata("metadata-test", "30s", "5m", QueueNone, "1m", metadata)
+	err = client.CreateLockWithMetadata("metadata-test", "30s", "5m", "", QueueNone, "1m", metadata)
 	if err != nil {
 		t.Fatalf("failed to create lock with metadata: %v", err)
 	}
 
 	// Test UpdateLock
-	err = client.UpdateLock("metadata-test", "60s", "10m", QueueFIFO, "2m", map[string]interface{}{"updated": true})
+	err = client.UpdateLock("metadata-test", "60s", "10m", "", QueueFIFO, "2m", map[string]interface{}{"updated": true})
 	if err != nil {
 		t.Fatalf("failed to update lock: %v", err)
 	}
@@ -844,7 +844,7 @@ func TestIntegrationClientConfiguration(t *testing.T) {
 	}
 
 	// Test basic functionality with configured client
-	err = client.CreateLock("config-test", "30s", "5m", QueueNone, "1m")
+	err = client.CreateLock("config-test", "30s", "5m", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock with configured client: %v", err)
 	}
@@ -861,7 +861,7 @@ func TestIntegrationAcquireOrWaitSuccess(t *testing.T) {
 	}
 
 	// Create lock with no queue
-	err = client.CreateLock("immediate-acquire-test", "1s", "5m", QueueNone, "1m")
+	err = client.CreateLock("immediate-acquire-test", "1s", "5m", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -903,7 +903,7 @@ func TestIntegrationAcquireOrWaitQueueSuccess(t *testing.T) {
 	}
 
 	// Create lock with FIFO queue
-	err = client1.CreateLock("queue-wait-test", "200ms", "5m", QueueFIFO, "5s")
+	err = client1.CreateLock("queue-wait-test", "200ms", "5m", "", QueueFIFO, "5s")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -985,7 +985,7 @@ func TestIntegrationAcquireOrWaitTimeout(t *testing.T) {
 	}
 
 	// Create lock with FIFO queue
-	err = client1.CreateLock("timeout-test", "1s", "5m", QueueFIFO, "5s")
+	err = client1.CreateLock("timeout-test", "1s", "5m", "", QueueFIFO, "5s")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func TestIntegrationRemoveFromQueue(t *testing.T) {
 	}
 
 	// Create lock with FIFO queue
-	err = client1.CreateLock("remove-queue-test", "1s", "5m", QueueFIFO, "5s")
+	err = client1.CreateLock("remove-queue-test", "1s", "5m", "", QueueFIFO, "5s")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -1106,7 +1106,7 @@ func TestIntegrationAcquireOrWaitZeroTimeout(t *testing.T) {
 	}
 
 	// Create lock and acquire it
-	err = client.CreateLock("zero-timeout-test", "1s", "5m", QueueNone, "1m")
+	err = client.CreateLock("zero-timeout-test", "1s", "5m", "", QueueNone, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -1160,7 +1160,7 @@ func TestIntegrationAcquireOrWaitExpiredRequest(t *testing.T) {
 	}
 
 	// Create lock with very short queue timeout
-	err = client1.CreateLock("expired-queue-test", "1s", "5m", QueueFIFO, "100ms")
+	err = client1.CreateLock("expired-queue-test", "1s", "5m", "", QueueFIFO, "100ms")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}
@@ -1207,7 +1207,7 @@ func TestIntegrationMetricsAPI(t *testing.T) {
 	}
 
 	// Create a lock
-	err = client.CreateLock("metrics-test", "30s", "5m", QueueFIFO, "1m")
+	err = client.CreateLock("metrics-test", "30s", "5m", "", QueueFIFO, "1m")
 	if err != nil {
 		t.Fatalf("failed to create lock: %v", err)
 	}

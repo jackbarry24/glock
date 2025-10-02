@@ -890,12 +890,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "capacity": {
-                    "description": "Lock configuration",
                     "type": "integer",
                     "example": 1000
                 },
                 "cleanup_interval": {
-                    "description": "Cleanup configuration",
                     "type": "string",
                     "example": "30s"
                 },
@@ -916,17 +914,14 @@ const docTemplate = `{
                     "example": "localhost"
                 },
                 "owner_history_max_size": {
-                    "description": "Metrics configuration",
                     "type": "integer",
                     "example": 100
                 },
                 "port": {
-                    "description": "Server configuration",
                     "type": "integer",
                     "example": 8080
                 },
                 "queue_max_size": {
-                    "description": "Queue configuration",
                     "type": "integer",
                     "example": 1024
                 }
@@ -949,6 +944,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "my-lock"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "/parent-lock"
                 },
                 "queue_timeout": {
                     "type": "string",
@@ -1011,6 +1010,10 @@ const docTemplate = `{
                 "owner_id": {
                     "type": "string",
                     "example": "uuid-123"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "/parent-lock"
                 },
                 "queue_size": {
                     "type": "integer",
@@ -1337,6 +1340,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "parent": {
+                    "type": "string"
+                },
                 "queue_timeout": {
                     "type": "string"
                 },
@@ -1393,7 +1399,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "localhost:8080",
-	BasePath:         "/",
+	BasePath:         "/api",
 	Schemes:          []string{},
 	Title:            "Glock Server API",
 	Description:      "In-memory lock queue",

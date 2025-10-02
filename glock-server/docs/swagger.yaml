@@ -1,4 +1,4 @@
-basePath: /
+basePath: /api
 definitions:
   core.AcquireRequest:
     description: AcquireRequest represents a request to acquire a lock
@@ -30,11 +30,9 @@ definitions:
     description: Config holds all configuration for the glock server
     properties:
       capacity:
-        description: Lock configuration
         example: 1000
         type: integer
       cleanup_interval:
-        description: Cleanup configuration
         example: 30s
         type: string
       default_max_ttl:
@@ -50,15 +48,12 @@ definitions:
         example: localhost
         type: string
       owner_history_max_size:
-        description: Metrics configuration
         example: 100
         type: integer
       port:
-        description: Server configuration
         example: 8080
         type: integer
       queue_max_size:
-        description: Queue configuration
         example: 1024
         type: integer
     type: object
@@ -71,6 +66,9 @@ definitions:
       metadata: {}
       name:
         example: my-lock
+        type: string
+      parent:
+        example: /parent-lock
         type: string
       queue_timeout:
         example: 1m
@@ -118,6 +116,9 @@ definitions:
         type: string
       owner_id:
         example: uuid-123
+        type: string
+      parent:
+        example: /parent-lock
         type: string
       queue_size:
         example: 0
@@ -335,6 +336,8 @@ definitions:
         type: string
       metadata: {}
       name:
+        type: string
+      parent:
         type: string
       queue_timeout:
         type: string

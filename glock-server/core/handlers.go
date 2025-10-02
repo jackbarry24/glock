@@ -561,7 +561,8 @@ func FreezeLockHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	lock := lockVal.(*Lock)
+	node := lockVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 
@@ -598,7 +599,8 @@ func UnfreezeLockHandler(c *gin.Context, g *GlockServer) {
 		return
 	}
 
-	lock := lockVal.(*Lock)
+	node := lockVal.(*Node)
+	lock := node.Lock
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 

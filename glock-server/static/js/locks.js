@@ -86,6 +86,9 @@ class LockManager {
             } else if (e.target.classList.contains('release-btn')) {
                 const lockName = e.target.dataset.lockName;
                 this.confirmReleaseLock(lockName);
+            } else if (e.target.classList.contains('acquire-btn')) {
+                const lockName = e.target.dataset.lockName;
+                this.acquireLock(lockName);
             } else if (e.target.classList.contains('create-lock-btn')) {
                 this.showCreateModal();
             } else if (e.target.classList.contains('freeze-btn')) {
@@ -820,6 +823,121 @@ class LockManager {
             console.error('Error unfreezing lock:', error);
             Utils.showAlert('Error', 'Failed to unfreeze lock: ' + error.message, 'error');
         }
+    }
+
+    async acquireLock(lockName) {
+        // Generate a random UUID for the owner_id
+        const ownerId = Utils.generateUUID();
+        const ownerName = 'Dashboard User';
+
+        try {
+            Utils.showLoading();
+
+            const acquireData = {
+                name: lockName,
+                owner: ownerName,
+                owner_id: ownerId,
+                queue_request: false
+            };
+
+            const response = await fetch('/api/acquire', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(acquireData)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // Show success modal with UUID
+            this.showAcquireSuccessModal(lockName, ownerId, result.lock);
+            this.loadLocks();
+
+        } catch (error) {
+            console.error('Error acquiring lock:', error);
+            Utils.showAlert('Error', 'Failed to acquire lock: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    }
+
+    showAcquireSuccessModal(lockName, ownerId, lockData) {
+        // Create a custom modal for showing the acquire success with UUID
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Lock Acquired</h3>
+                    <span class="modal-close">&times;</span>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <p style="margin: 0 0 15px 0; color: #666;">Lock <strong>${Utils.escapeHtml(lockName)}</strong> has been acquired.</p>
+                    <p style="margin: 0 0 10px 0; font-weight: 500;">Please copy your Owner ID:</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" 
+                               id="owner-id-input" 
+                               value="${Utils.escapeHtml(ownerId)}" 
+                               readonly 
+                               style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 13px; background: #f8f8f8;">
+                        <button type="button" 
+                                id="copy-uuid-btn" 
+                                class="btn btn-primary" 
+                                style="white-space: nowrap;">
+                            Copy
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary modal-close">Close</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.style.display = 'flex';
+
+        // Add event listeners
+        const closeButtons = modal.querySelectorAll('.modal-close');
+        const copyBtn = modal.querySelector('#copy-uuid-btn');
+        const ownerIdInput = modal.querySelector('#owner-id-input');
+
+        const closeModal = () => {
+            if (modal.parentNode) {
+                modal.parentNode.removeChild(modal);
+            }
+        };
+
+        // Copy button functionality
+        if (copyBtn && ownerIdInput) {
+            copyBtn.addEventListener('click', () => {
+                ownerIdInput.select();
+                document.execCommand('copy');
+
+                // Visual feedback
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                copyBtn.style.background = '#28a745';
+
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.style.background = '';
+                }, 2000);
+            });
+        }
+
+        closeButtons.forEach(btn => btn.addEventListener('click', closeModal));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
     }
 
     formatParentInfo(lock) {
