@@ -48,4 +48,6 @@ tmp/
 temp/
 
 # Dependencies
-/vendor/
+/vendor
+
+**/config.yaml

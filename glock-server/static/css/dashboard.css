@@ -1538,3 +1538,43 @@
         padding: 24px 20px !important;
     }
 }
+
+/* Tags Styling */
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Roboto Mono', 'Source Code Pro', monospace;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.tag:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.tag-more {
+    background: #f3f4f6;
+    color: #6b7280;
+    border-color: #d1d5db;
+    cursor: help;
+}
+
+.tag-more:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+}

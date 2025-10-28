@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"glock-server/core"
 	"log"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -16,26 +19,34 @@ import (
 
 // @title Glock Server API
 // @version 1.0
-// @description In-memory lock queue
+// @description In-memory distributed lock server with queue support
 
 // @host localhost:8080
 // @BasePath /api
 func main() {
-	configFile := os.Getenv("GLOCK_CONFIG_FILE")
-	config, err := core.LoadConfig(configFile)
+	httpConfigFile := os.Getenv("GLOCK_CONFIG_FILE")
+	httpConfig, err := core.LoadConfig(httpConfigFile)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("Failed to load HTTP configuration: %v", err)
 	}
 
-	log.Printf("Starting glock server with config: %+v", config)
-
-	locks := &core.GlockServer{
-		Size:     0,
-		Capacity: config.Capacity,
-		Locks:    sync.Map{},
-		LockTree: core.NewLockTree(),
-		Config:   config,
+	serverConfig := core.ServerConfig{
+		NumShards:           32,
+		ExpiryTick:          50 * time.Millisecond,
+		Capacity:            httpConfig.Capacity,
+		DefaultMaxTTL:       httpConfig.DefaultMaxTTL,
+		DefaultTTL:          httpConfig.DefaultTTL,
+		DefaultQueue:        httpConfig.QueueMaxSize,
+		DefaultQueueTimeout: httpConfig.DefaultQueueTimeout,
 	}
+
+	srv, err := core.NewServer(serverConfig)
+	if err != nil {
+		log.Fatalf("Failed to create server: %v", err)
+	}
+
+	srv.Start()
+	log.Println("Lock server started")
 
 	r := gin.Default()
 
@@ -45,66 +56,43 @@ func main() {
 
 	api := r.Group("/api")
 	{
-		api.POST("/create", func(c *gin.Context) {
-			core.CreateHandler(c, locks)
-		})
-		api.POST("/update", func(c *gin.Context) {
-			core.UpdateHandler(c, locks)
-		})
-		api.DELETE("/delete/:name", func(c *gin.Context) {
-			core.DeleteHandler(c, locks)
-		})
-		api.POST("/acquire", func(c *gin.Context) {
-			core.AcquireHandler(c, locks)
-		})
-		api.POST("/refresh", func(c *gin.Context) {
-			core.RefreshHandler(c, locks)
-		})
-		api.POST("/verify", func(c *gin.Context) {
-			core.VerifyHandler(c, locks)
-		})
-		api.POST("/release", func(c *gin.Context) {
-			core.ReleaseHandler(c, locks)
-		})
-		api.POST("/poll", func(c *gin.Context) {
-			core.PollHandler(c, locks)
-		})
-		api.POST("/remove", func(c *gin.Context) {
-			core.RemoveFromQueueHandler(c, locks)
-		})
-		api.POST("/queue/list", func(c *gin.Context) {
-			core.ListQueueHandler(c, locks)
-		})
-		api.POST("/freeze/:name", func(c *gin.Context) {
-			core.FreezeLockHandler(c, locks)
-		})
-		api.POST("/unfreeze/:name", func(c *gin.Context) {
-			core.UnfreezeLockHandler(c, locks)
-		})
+		locks := api.Group("/locks")
+		{
+			locks.GET("", core.ListHandler(srv))
+			locks.POST("", core.CreateHandler(srv))
+			locks.GET("/:lock_id", core.StatusHandler(srv))
+			locks.DELETE("/:lock_id", core.DeleteHandler(srv))
+			locks.GET("/:lock_id/metrics", core.MetricsHandler(srv))
 
-		api.GET("/status", func(c *gin.Context) {
-			core.StatusHandler(c, locks)
-		})
-		api.GET("/list", func(c *gin.Context) {
-			core.ListHandler(c, locks)
-		})
-		api.GET("/metrics/:name", func(c *gin.Context) {
-			core.MetricsHandler(c, locks)
-		})
+			locks.POST("/:lock_id/lease", core.AcquireHandler(srv))
+			locks.PUT("/:lock_id/lease", core.RefreshHandler(srv))
+			locks.DELETE("/:lock_id/lease", core.ReleaseHandler(srv))
 
-		api.GET("/config", func(c *gin.Context) {
-			core.ConfigHandler(c, locks)
-		})
-		api.POST("/config/update", func(c *gin.Context) {
-			core.UpdateConfigHandler(c, locks)
-		})
+			locks.GET("/:lock_id/queue", core.QueueGetHandler(srv))
+			locks.DELETE("/:lock_id/queue/:wait_id", core.QueueDelHandler(srv))
+		}
 	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	log.Printf("Starting server on %s", addr)
-	if err := r.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	addr := fmt.Sprintf("%s:%d", httpConfig.Host, httpConfig.Port)
+	log.Printf("Starting HTTP server on %s", addr)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := r.Run(addr); err != nil {
+			log.Fatalf("Failed to start HTTP server: %v", err)
+		}
+	}()
+
+	<-quit
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	srv.Stop(ctx)
+
+	log.Println("Server stopped")
 }

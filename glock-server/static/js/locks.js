@@ -8,10 +8,11 @@ class LockManager {
         this.filteredLocks = [];
         this.searchTerm = '';
         this.statusFilter = '';
+        this.tagFilter = '';
         this.lastUpdated = null;
         this.autoRefreshInterval = null;
         this.autoRefreshEnabled = false;
-        this.lockHierarchy = {}; // Map of lock name to parent chain
+        this.lockHierarchy = {};
 
         this.init();
     }
@@ -28,6 +29,7 @@ class LockManager {
         // Search and filter
         const searchInput = document.getElementById('search-input');
         const statusFilter = document.getElementById('status-filter');
+        const tagFilter = document.getElementById('tag-filter');
         const refreshBtn = document.getElementById('refresh-btn');
         const autoRefreshCheckbox = document.getElementById('auto-refresh-checkbox');
 
@@ -41,6 +43,13 @@ class LockManager {
         if (statusFilter) {
             statusFilter.addEventListener('change', () => {
                 this.statusFilter = statusFilter.value;
+                this.applyFilters();
+            });
+        }
+
+        if (tagFilter) {
+            tagFilter.addEventListener('change', () => {
+                this.tagFilter = tagFilter.value;
                 this.applyFilters();
             });
         }
@@ -65,22 +74,19 @@ class LockManager {
 
         // Form submissions
         const createForm = document.getElementById('create-lock-form');
-        const updateForm = document.getElementById('update-lock-form');
+        const releaseForm = document.getElementById('release-lock-form');
 
         if (createForm) {
             createForm.addEventListener('submit', (e) => this.handleCreateLock(e));
         }
 
-        if (updateForm) {
-            updateForm.addEventListener('submit', (e) => this.handleUpdateLock(e));
+        if (releaseForm) {
+            releaseForm.addEventListener('submit', (e) => this.handleReleaseLock(e));
         }
 
         // Action button events (delegated)
         document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('update-btn')) {
-                const lockName = e.target.dataset.lockName;
-                this.showUpdateModal(lockName);
-            } else if (e.target.classList.contains('delete-btn')) {
+            if (e.target.classList.contains('delete-btn')) {
                 const lockName = e.target.dataset.lockName;
                 this.confirmDeleteLock(lockName);
             } else if (e.target.classList.contains('release-btn')) {
@@ -91,12 +97,6 @@ class LockManager {
                 this.acquireLock(lockName);
             } else if (e.target.classList.contains('create-lock-btn')) {
                 this.showCreateModal();
-            } else if (e.target.classList.contains('freeze-btn')) {
-                const lockName = e.target.dataset.lockName;
-                this.freezeLock(lockName);
-            } else if (e.target.classList.contains('unfreeze-btn')) {
-                const lockName = e.target.dataset.lockName;
-                this.unfreezeLock(lockName);
             } else if (e.target.classList.contains('queue-details-btn')) {
                 const lockName = e.target.dataset.lockName;
                 this.showQueueDetails(lockName);
@@ -121,19 +121,28 @@ class LockManager {
     async loadLocks() {
         try {
             Utils.showLoading();
-            const response = await fetch('/api/status');
+            const response = await fetch('/api/locks');
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            const data = await response.json();
-            this.locks = data.locks || [];
+            const lockIds = await response.json();
+            const locks = lockIds.locks || [];
+
+            // Fetch status for each lock
+            const statusPromises = locks.map(lockId =>
+                fetch(`/api/locks/${encodeURIComponent(lockId)}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => data ? { lockId, status: data.status } : null)
+            );
+
+            const statuses = (await Promise.all(statusPromises)).filter(s => s !== null);
+
+            this.locks = statuses.map(({ lockId, status }) => this.transformLockData(status, lockId));
             this.lastUpdated = new Date();
 
-            // Build lock hierarchy after loading locks
             this.buildLockHierarchy();
-
             this.updateStats();
             this.applyFilters();
             this.updateLastUpdated();
@@ -145,6 +154,29 @@ class LockManager {
         } finally {
             Utils.hideLoading();
         }
+    }
+
+    transformLockData(status, lockID) {
+        const lock = {
+            name: lockID,
+            owner_id: status.owner ? status.owner.client_id : null,
+            owner: status.owner ? status.owner.client_id : null,
+            acquired_at: status.owner ? status.owner.acquired_at : null,
+            last_refresh: status.owner ? status.owner.acquired_at : null,
+            ttl: status.config.default_ttl,
+            max_ttl: status.config.max_ttl,
+            parent: '',
+            queue_type: status.config.queue_type || 'none',
+            queue_size: status.queue_len,
+            queue_timeout: 300000000000,
+            token: status.owner ? status.owner.lease_id : null,
+            fence_token: status.owner ? status.owner.fence_token : null,
+            metadata: null,
+            frozen: false,
+            expires_at: status.owner ? status.owner.expires_at : null,
+            tags: status.tags || []
+        };
+        return lock;
     }
 
     updateStats() {
@@ -206,15 +238,12 @@ class LockManager {
     }
 
     isLockValid(lock) {
-        if (!lock.owner_id) return false;
+        if (!lock.owner_id || !lock.expires_at) return false;
 
         const now = new Date();
-        const acquiredAt = new Date(lock.acquired_at);
-        const lastRefresh = new Date(lock.last_refresh);
-        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
-        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
+        const expiresAt = new Date(lock.expires_at);
 
-        return now <= maxTTLExpiry && now <= ttlExpiry;
+        return now <= expiresAt;
     }
 
     applyFilters() {
@@ -245,10 +274,43 @@ class LockManager {
                 }
             }
 
-            return matchesSearch && matchesStatus;
+            // Tag filter
+            let matchesTag = true;
+            if (this.tagFilter) {
+                matchesTag = lock.tags && lock.tags.includes(this.tagFilter);
+            }
+
+            return matchesSearch && matchesStatus && matchesTag;
         });
 
+        this.updateTagFilterOptions();
         this.renderLocks();
+    }
+
+    updateTagFilterOptions() {
+        const tagFilter = document.getElementById('tag-filter');
+        if (!tagFilter) return;
+
+        const allTags = new Set();
+        this.locks.forEach(lock => {
+            if (lock.tags) {
+                lock.tags.forEach(tag => allTags.add(tag));
+            }
+        });
+
+        const currentValue = tagFilter.value;
+        const sortedTags = Array.from(allTags).sort();
+
+        tagFilter.innerHTML = '<option value="">All Tags</option>';
+        sortedTags.forEach(tag => {
+            const option = document.createElement('option');
+            option.value = tag;
+            option.textContent = tag;
+            if (tag === currentValue) {
+                option.selected = true;
+            }
+            tagFilter.appendChild(option);
+        });
     }
 
     renderLocks() {
@@ -256,7 +318,7 @@ class LockManager {
         if (!tbody) return;
 
         if (this.filteredLocks.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="no-data">No locks found matching your criteria</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="no-data">No locks found matching your criteria</td></tr>';
             return;
         }
 
@@ -273,6 +335,7 @@ class LockManager {
                 <td>${Utils.formatTTL(lock.ttl)}</td>
                 <td>${Utils.formatTTL(lock.max_ttl)}</td>
                 <td>${Utils.formatQueueInfo(lock)}</td>
+                <td>${this.formatTags(lock.tags)}</td>
                 <td class="actions-column">${actionButtons}</td>
             </tr>
         `}).join('');
@@ -280,10 +343,33 @@ class LockManager {
         tbody.innerHTML = rows;
     }
 
+    formatTags(tags) {
+        if (!tags || tags.length === 0) {
+            return '<span style="color: #999;">—</span>';
+        }
+
+        const maxVisible = 3;
+        const visibleTags = tags.slice(0, maxVisible);
+        const remaining = tags.length - maxVisible;
+
+        let html = '<div class="tags-container">';
+        visibleTags.forEach(tag => {
+            html += `<span class="tag">${Utils.escapeHtml(tag)}</span>`;
+        });
+
+        if (remaining > 0) {
+            const allTagsEscaped = tags.map(t => Utils.escapeHtml(t)).join(', ');
+            html += `<span class="tag tag-more" title="${allTagsEscaped}">+${remaining}</span>`;
+        }
+
+        html += '</div>';
+        return html;
+    }
+
     showEmptyState() {
         const tbody = document.getElementById('locks-tbody');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="8" class="no-data">Unable to load locks. Please try again.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="no-data">Unable to load locks. Please try again.</td></tr>';
         }
     }
 
@@ -316,27 +402,36 @@ class LockManager {
                 form.reset();
             }
             modal.style.display = 'flex';
+
+            // Set up queue type change handler (do this each time to ensure it's attached)
+            const queueTypeSelect = document.getElementById('create-queue-type');
+            if (queueTypeSelect) {
+                // Remove any existing listener by cloning the element
+                const newQueueTypeSelect = queueTypeSelect.cloneNode(true);
+                queueTypeSelect.parentNode.replaceChild(newQueueTypeSelect, queueTypeSelect);
+
+                // Add the event listener
+                newQueueTypeSelect.addEventListener('change', (e) => {
+                    this.toggleQueueConfigFields(e.target.value);
+                });
+
+                // Initialize visibility based on current value
+                this.toggleQueueConfigFields(newQueueTypeSelect.value);
+            }
         }
     }
 
-    showUpdateModal(lockName) {
-        const lock = this.locks.find(l => l.name === lockName);
-        if (!lock) return;
-
-        const modal = document.getElementById('update-modal');
-        if (modal) {
-            // Populate form
-            document.getElementById('update-lock-name').value = lock.name;
-            document.getElementById('update-parent').value = lock.parent || '';
-            document.getElementById('update-ttl').value = this.secondsToDuration(lock.ttl);
-            document.getElementById('update-max-ttl').value = this.secondsToDuration(lock.max_ttl);
-            document.getElementById('update-queue-type').value = lock.queue_type;
-            document.getElementById('update-queue-timeout').value = this.secondsToDuration(lock.queue_timeout);
-            document.getElementById('update-metadata').value = Utils.formatMetadata(lock.metadata);
-
-            modal.style.display = 'flex';
+    toggleQueueConfigFields(queueType) {
+        const queueConfigFields = document.getElementById('queue-config-fields');
+        if (queueConfigFields) {
+            if (queueType === 'none') {
+                queueConfigFields.style.display = 'none';
+            } else {
+                queueConfigFields.style.display = 'flex';
+            }
         }
     }
+
 
     secondsToDuration(nanoseconds) {
         // Convert nanoseconds to seconds
@@ -351,27 +446,36 @@ class LockManager {
         e.preventDefault();
 
         const formData = new FormData(e.target);
-        const lockData = {
-            name: formData.get('name'),
-            ttl: formData.get('ttl'),
+        const queueType = formData.get('queue_type') || 'none';
+        const maxQueue = formData.get('max_queue');
+        const queueTimeout = formData.get('queue_timeout');
+        const tagsInput = formData.get('tags');
+
+        const config = {
+            default_ttl: formData.get('ttl'),
             max_ttl: formData.get('max_ttl'),
-            parent: formData.get('parent') || '',
-            queue_type: formData.get('queue_type') || 'none',
-            queue_timeout: formData.get('queue_timeout') || '',
-            metadata: formData.get('metadata') || null
+            max_queue: maxQueue ? parseInt(maxQueue, 10) : (queueType === 'none' ? 0 : 100),
+            queue_type: queueType
         };
 
-        // Parse metadata if provided
-        if (lockData.metadata) {
-            lockData.metadata = Utils.safeJsonParse(lockData.metadata);
-            if (lockData.metadata === null) {
-                Utils.showAlert('Error', 'Invalid JSON in metadata field', 'error');
-                return;
-            }
+        if (queueTimeout && queueTimeout.trim() !== '') {
+            config.default_timeout = queueTimeout;
+        }
+
+        const lockData = {
+            lock_id: formData.get('name'),
+            config: config
+        };
+
+        if (tagsInput && tagsInput.trim() !== '') {
+            lockData.tags = tagsInput.split(',')
+                .map(tag => tag.trim())
+                .filter(tag => tag.length > 0)
+                .slice(0, 16);
         }
 
         try {
-            const response = await fetch('/api/create', {
+            const response = await fetch('/api/locks', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -394,52 +498,6 @@ class LockManager {
         }
     }
 
-    async handleUpdateLock(e) {
-        e.preventDefault();
-
-        const formData = new FormData(e.target);
-        const lockData = {
-            name: formData.get('name'),
-            ttl: formData.get('ttl'),
-            max_ttl: formData.get('max_ttl'),
-            parent: formData.get('parent') || '',
-            queue_type: formData.get('queue_type') || 'none',
-            queue_timeout: formData.get('queue_timeout') || '',
-            metadata: formData.get('metadata') || null
-        };
-
-        // Parse metadata if provided
-        if (lockData.metadata) {
-            lockData.metadata = Utils.safeJsonParse(lockData.metadata);
-            if (lockData.metadata === null) {
-                Utils.showAlert('Error', 'Invalid JSON in metadata field', 'error');
-                return;
-            }
-        }
-
-        try {
-            const response = await fetch('/api/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(lockData)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `HTTP ${response.status}`);
-            }
-
-            this.closeAllModals();
-            Utils.showAlert('Success', 'Lock updated successfully!', 'success');
-            this.loadLocks();
-
-        } catch (error) {
-            console.error('Error updating lock:', error);
-            Utils.showAlert('Error', 'Failed to update lock: ' + error.message, 'error');
-        }
-    }
 
     confirmDeleteLock(lockName) {
         Utils.showConfirm(
@@ -451,7 +509,7 @@ class LockManager {
 
     async deleteLock(lockName) {
         try {
-            const response = await fetch(`/api/delete/${encodeURIComponent(lockName)}`, {
+            const response = await fetch(`/api/locks/${encodeURIComponent(lockName)}`, {
                 method: 'DELETE'
             });
 
@@ -470,32 +528,47 @@ class LockManager {
     }
 
     confirmReleaseLock(lockName) {
-        Utils.showConfirm(
-            'Release Lock',
-            `Are you sure you want to release the lock "${lockName}"?`,
-            () => this.releaseLock(lockName)
-        );
+        this.showReleaseModal(lockName);
     }
 
-    async releaseLock(lockName) {
-        // We need to find the lock to get the owner_id and token
+    showReleaseModal(lockName) {
         const lock = this.locks.find(l => l.name === lockName);
         if (!lock || !lock.owner_id) {
             Utils.showAlert('Error', 'Lock is not currently held', 'error');
             return;
         }
 
-        // For demo purposes, we'll use placeholder values since we don't have the real token
-        // In a real implementation, you'd need to get this from the lock data
-        const releaseData = {
-            name: lockName,
-            owner_id: lock.owner_id,
-            token: lock.token || 1 // This would need to be the actual token
-        };
+        const modal = document.getElementById('release-modal');
+        if (modal) {
+            // Reset form
+            const form = document.getElementById('release-lock-form');
+            if (form) {
+                form.reset();
+                document.getElementById('release-lock-name').value = lockName;
+                document.getElementById('release-lock-name-display').value = lockName;
+            }
+            modal.style.display = 'flex';
+        }
+    }
+
+    async handleReleaseLock(e) {
+        e.preventDefault();
+
+        const formData = new FormData(e.target);
+        const lockName = formData.get('lock_name');
+        const clientId = formData.get('client_id');
+        const leaseId = formData.get('lease_id');
 
         try {
-            const response = await fetch('/api/release', {
-                method: 'POST',
+            Utils.showLoading();
+
+            const releaseData = {
+                client_id: clientId,
+                lease_id: leaseId
+            };
+
+            const response = await fetch(`/api/locks/${encodeURIComponent(lockName)}/lease`, {
+                method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -507,12 +580,15 @@ class LockManager {
                 throw new Error(error.error || `HTTP ${response.status}`);
             }
 
+            this.closeAllModals();
             Utils.showAlert('Success', 'Lock released successfully!', 'success');
             this.loadLocks();
 
         } catch (error) {
             console.error('Error releasing lock:', error);
             Utils.showAlert('Error', 'Failed to release lock: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
         }
     }
 
@@ -524,17 +600,9 @@ class LockManager {
         }
 
         try {
-            // Show loading
             Utils.showLoading();
 
-            // Fetch queue details from API
-            const response = await fetch('/api/queue/list', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: lockName })
-            });
+            const response = await fetch(`/api/locks/${encodeURIComponent(lockName)}/queue?limit=100`);
 
             if (!response.ok) {
                 const error = await response.json();
@@ -542,7 +610,7 @@ class LockManager {
             }
 
             const data = await response.json();
-            this.showQueueDetailsModal(lock, data.requests);
+            this.showQueueDetailsModal(lock, data.queue);
 
         } catch (error) {
             console.error('Error loading queue details:', error);
@@ -605,13 +673,7 @@ class LockManager {
         const refreshQueue = async () => {
             try {
                 Utils.showLoading();
-                const response = await fetch('/api/queue/list', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ name: modal._lockName })
-                });
+                const response = await fetch(`/api/locks/${encodeURIComponent(modal._lockName)}/queue?limit=100`);
 
                 if (!response.ok) {
                     const error = await response.json();
@@ -620,15 +682,14 @@ class LockManager {
 
                 const data = await response.json();
 
-                // Update the queue table
                 const modalBody = modal.querySelector('.modal-body');
                 const newContent = `
                     <div class="queue-summary">
                         <p><strong>Queue Type:</strong> ${modal._lock.queue_type.toUpperCase()}</p>
-                        <p><strong>Requests in Queue:</strong> ${data.requests.length}</p>
+                        <p><strong>Requests in Queue:</strong> ${data.queue.length}</p>
                         <p><strong>Queue Timeout:</strong> ${Utils.formatTTL(modal._lock.queue_timeout)}</p>
                     </div>
-                    ${data.requests.length > 0 ? this.generateQueueTable(data.requests) : '<div class="no-data">Queue is currently empty</div>'}
+                    ${data.queue.length > 0 ? this.generateQueueTable(data.queue) : '<div class="no-data">Queue is currently empty</div>'}
                 `;
                 modalBody.innerHTML = newContent;
 
@@ -646,13 +707,12 @@ class LockManager {
         closeActionBtn.addEventListener('click', closeModal);
         refreshBtn.addEventListener('click', refreshQueue);
 
-        // Add remove button event listeners
         modal.addEventListener('click', async (e) => {
             if (e.target.classList.contains('remove-queue-btn')) {
                 e.preventDefault();
-                const requestId = e.target.dataset.requestId;
-                const ownerId = e.target.dataset.ownerId;
-                await this.removeFromQueue(lock.name, requestId, ownerId, modal);
+                const waitId = e.target.dataset.waitId;
+                const clientId = e.target.dataset.clientId;
+                await this.removeFromQueue(lock.name, waitId, clientId, modal);
             } else if (e.target === modal) {
                 closeModal();
             }
@@ -666,25 +726,23 @@ class LockManager {
                     <thead>
                         <tr>
                             <th class="position-col">Position</th>
-                            <th class="request-id-col">Request ID</th>
-                            <th class="owner-col">Owner</th>
-                            <th class="time-col">Queued At</th>
-                            <th class="time-col">Time in Queue</th>
+                            <th class="request-id-col">Wait ID</th>
+                            <th class="owner-col">Client ID</th>
+                            <th class="time-col">Timeout At</th>
                             <th class="actions-col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${requests.map((req, index) => `
                             <tr>
-                                <td class="position-col">${index + 1}</td>
-                                <td class="request-id-col"><code>${Utils.escapeHtml(req.id)}</code></td>
-                                <td class="owner-col">${Utils.escapeHtml(req.owner)}</td>
-                                <td class="time-col">${new Date(req.queued_at).toLocaleString()}</td>
-                                <td class="time-col">${this.formatTimeInQueue(req.queued_at)}</td>
+                                <td class="position-col">${req.position}</td>
+                                <td class="request-id-col"><code>${Utils.escapeHtml(req.wait_id)}</code></td>
+                                <td class="owner-col">${Utils.escapeHtml(req.client_id)}</td>
+                                <td class="time-col">${new Date(req.timeout_at).toLocaleString()}</td>
                                 <td class="actions-col">
                                     <button class="remove-queue-btn"
-                                            data-request-id="${req.id}"
-                                            data-owner-id="${req.owner_id}"
+                                            data-wait-id="${req.wait_id}"
+                                            data-client-id="${req.client_id}"
                                             title="Remove from queue">Remove</button>
                                 </td>
                             </tr>
@@ -695,34 +753,22 @@ class LockManager {
         `;
     }
 
-    formatTimeInQueue(queuedAt) {
-        const now = new Date();
-        const queued = new Date(queuedAt);
-        const diffMs = now - queued;
-        const diffSeconds = Math.floor(diffMs / 1000);
 
-        if (diffSeconds < 60) return `${diffSeconds}s`;
-        if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
-        return `${Math.floor(diffSeconds / 3600)}h`;
-    }
-
-    async removeFromQueue(lockName, requestId, ownerId, modal) {
+    async removeFromQueue(lockName, waitId, clientId, modal) {
         Utils.showConfirm(
             'Remove from Queue',
-            `Are you sure you want to remove request "${requestId}" from the queue?`,
+            `Are you sure you want to remove wait entry "${waitId}" from the queue?`,
             async () => {
                 try {
                     Utils.showLoading();
 
-                    const response = await fetch('/api/remove', {
-                        method: 'POST',
+                    const response = await fetch(`/api/locks/${encodeURIComponent(lockName)}/queue/${encodeURIComponent(waitId)}`, {
+                        method: 'DELETE',
                         headers: {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            name: lockName,
-                            request_id: requestId,
-                            owner_id: ownerId
+                            client_id: clientId
                         })
                     });
 
@@ -736,32 +782,23 @@ class LockManager {
                     if (result.removed) {
                         Utils.showAlert('Success', 'Request removed from queue successfully!', 'success');
 
-                        // Refresh the queue details
-                        const refreshResponse = await fetch('/api/queue/list', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ name: lockName })
-                        });
+                        const refreshResponse = await fetch(`/api/locks/${encodeURIComponent(lockName)}/queue?limit=100`);
 
                         if (refreshResponse.ok) {
                             const refreshData = await refreshResponse.json();
 
-                            // Update the modal content
                             const modalBody = modal.querySelector('.modal-body');
                             const newContent = `
                                 <div class="queue-summary">
                                     <p><strong>Queue Type:</strong> ${modal._lock.queue_type.toUpperCase()}</p>
-                                    <p><strong>Requests in Queue:</strong> ${refreshData.requests.length}</p>
+                                    <p><strong>Requests in Queue:</strong> ${refreshData.queue.length}</p>
                                     <p><strong>Queue Timeout:</strong> ${Utils.formatTTL(modal._lock.queue_timeout)}</p>
                                 </div>
-                                ${refreshData.requests.length > 0 ? this.generateQueueTable(refreshData.requests) : '<div class="no-data">Queue is currently empty</div>'}
+                                ${refreshData.queue.length > 0 ? this.generateQueueTable(refreshData.queue) : '<div class="no-data">Queue is currently empty</div>'}
                             `;
                             modalBody.innerHTML = newContent;
                         }
 
-                        // Refresh the main locks list to update queue sizes
                         this.loadLocks();
                     } else {
                         Utils.showAlert('Warning', 'Request was not found in queue', 'warning');
@@ -777,70 +814,20 @@ class LockManager {
         );
     }
 
-    async freezeLock(lockName) {
-        try {
-            const response = await fetch(`/api/freeze/${encodeURIComponent(lockName)}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            Utils.showAlert('Success', result.message || 'Lock frozen successfully!', 'success');
-            this.loadLocks();
-
-        } catch (error) {
-            console.error('Error freezing lock:', error);
-            Utils.showAlert('Error', 'Failed to freeze lock: ' + error.message, 'error');
-        }
-    }
-
-    async unfreezeLock(lockName) {
-        try {
-            const response = await fetch(`/api/unfreeze/${encodeURIComponent(lockName)}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            Utils.showAlert('Success', result.message || 'Lock unfrozen successfully!', 'success');
-            this.loadLocks();
-
-        } catch (error) {
-            console.error('Error unfreezing lock:', error);
-            Utils.showAlert('Error', 'Failed to unfreeze lock: ' + error.message, 'error');
-        }
-    }
 
     async acquireLock(lockName) {
-        // Generate a random UUID for the owner_id
-        const ownerId = Utils.generateUUID();
-        const ownerName = 'Dashboard User';
+        const clientId = Utils.generateUUID();
 
         try {
             Utils.showLoading();
 
             const acquireData = {
-                name: lockName,
-                owner: ownerName,
-                owner_id: ownerId,
-                queue_request: false
+                client_id: clientId,
+                lease_ttl: '30s',
+                wait: false
             };
 
-            const response = await fetch('/api/acquire', {
+            const response = await fetch(`/api/locks/${encodeURIComponent(lockName)}/lease`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -855,9 +842,12 @@ class LockManager {
 
             const result = await response.json();
 
-            // Show success modal with UUID
-            this.showAcquireSuccessModal(lockName, ownerId, result.lock);
-            this.loadLocks();
+            if (result.state === 'granted') {
+                this.showAcquireSuccessModal(lockName, clientId, result.lease_id, result.fence_token);
+                this.loadLocks();
+            } else {
+                throw new Error(`Lock acquisition failed: ${result.state}`);
+            }
 
         } catch (error) {
             console.error('Error acquiring lock:', error);
@@ -867,8 +857,7 @@ class LockManager {
         }
     }
 
-    showAcquireSuccessModal(lockName, ownerId, lockData) {
-        // Create a custom modal for showing the acquire success with UUID
+    showAcquireSuccessModal(lockName, clientId, leaseId, fenceToken) {
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
@@ -879,15 +868,29 @@ class LockManager {
                 </div>
                 <div class="modal-body" style="padding: 20px;">
                     <p style="margin: 0 0 15px 0; color: #666;">Lock <strong>${Utils.escapeHtml(lockName)}</strong> has been acquired.</p>
-                    <p style="margin: 0 0 10px 0; font-weight: 500;">Please copy your Owner ID:</p>
-                    <div style="display: flex; gap: 10px; align-items: center;">
+                    <p style="margin: 10px 0 5px 0; font-weight: 500;">Client ID:</p>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
                         <input type="text" 
-                               id="owner-id-input" 
-                               value="${Utils.escapeHtml(ownerId)}" 
+                               id="client-id-input" 
+                               value="${Utils.escapeHtml(clientId)}" 
                                readonly 
                                style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 13px; background: #f8f8f8;">
                         <button type="button" 
-                                id="copy-uuid-btn" 
+                                id="copy-client-btn" 
+                                class="btn btn-primary" 
+                                style="white-space: nowrap;">
+                            Copy
+                        </button>
+                    </div>
+                    <p style="margin: 10px 0 5px 0; font-weight: 500;">Lease ID:</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" 
+                               id="lease-id-input" 
+                               value="${Utils.escapeHtml(leaseId)}" 
+                               readonly 
+                               style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 13px; background: #f8f8f8;">
+                        <button type="button" 
+                                id="copy-lease-btn" 
                                 class="btn btn-primary" 
                                 style="white-space: nowrap;">
                             Copy
@@ -903,10 +906,11 @@ class LockManager {
         document.body.appendChild(modal);
         modal.style.display = 'flex';
 
-        // Add event listeners
         const closeButtons = modal.querySelectorAll('.modal-close');
-        const copyBtn = modal.querySelector('#copy-uuid-btn');
-        const ownerIdInput = modal.querySelector('#owner-id-input');
+        const copyClientBtn = modal.querySelector('#copy-client-btn');
+        const copyLeaseBtn = modal.querySelector('#copy-lease-btn');
+        const clientIdInput = modal.querySelector('#client-id-input');
+        const leaseIdInput = modal.querySelector('#lease-id-input');
 
         const closeModal = () => {
             if (modal.parentNode) {
@@ -914,23 +918,24 @@ class LockManager {
             }
         };
 
-        // Copy button functionality
-        if (copyBtn && ownerIdInput) {
-            copyBtn.addEventListener('click', () => {
-                ownerIdInput.select();
-                document.execCommand('copy');
+        const setupCopyButton = (btn, input) => {
+            if (btn && input) {
+                btn.addEventListener('click', () => {
+                    input.select();
+                    document.execCommand('copy');
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.style.background = '#28a745';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                });
+            }
+        };
 
-                // Visual feedback
-                const originalText = copyBtn.textContent;
-                copyBtn.textContent = 'Copied!';
-                copyBtn.style.background = '#28a745';
-
-                setTimeout(() => {
-                    copyBtn.textContent = originalText;
-                    copyBtn.style.background = '';
-                }, 2000);
-            });
-        }
+        setupCopyButton(copyClientBtn, clientIdInput);
+        setupCopyButton(copyLeaseBtn, leaseIdInput);
 
         closeButtons.forEach(btn => btn.addEventListener('click', closeModal));
         modal.addEventListener('click', (e) => {

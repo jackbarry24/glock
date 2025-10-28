@@ -1,20 +1,17 @@
 # Example configuration file for glock-server
-# This file demonstrates all available configuration options
+# Copy this file to config.yaml and adjust values as needed
 
-# Server configuration
+# HTTP server configuration
 port: 8080
-host: ""  # Leave empty to bind to all interfaces
+host: ""  # Leave empty to bind to all interfaces (0.0.0.0)
 
-# Lock configuration
-capacity: 1000
-default_ttl: 30s
-default_max_ttl: 5m
-default_queue_timeout: 5m
+# Server capacity
+capacity: 10000  # Maximum number of locks that can be created (max: 1048576 = 2^20)
 
-# Metrics configuration
-owner_history_max_size: 100
+# Lock defaults
+default_ttl: 30s        # Default lease duration for locks
+default_max_ttl: 5m     # Maximum allowed lease duration
 
 # Queue configuration
-queue_max_size: 1024
-
-cleanup_interval: 5s
+default_queue_timeout: 5m  # Default timeout for clients waiting in queue
+queue_max_size: 1024       # Maximum number of clients that can wait in queue per lock (max: 1048576 = 2^20)

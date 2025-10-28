@@ -39,6 +39,9 @@
                         <option value="blocked">Blocked</option>
                         <option value="expired">Expired</option>
                     </select>
+                    <select id="tag-filter" class="filter-select">
+                        <option value="">All Tags</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -85,12 +88,13 @@
                             <th>TTL</th>
                             <th>Max TTL</th>
                             <th>Queue</th>
+                            <th>Tags</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="locks-tbody">
                         <tr>
-                            <td colspan="8" class="no-data">Loading locks...</td>
+                            <td colspan="9" class="no-data">Loading locks...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -108,27 +112,16 @@
             <form id="create-lock-form">
                 <div class="form-group">
                     <label for="create-name">Lock Name *</label>
-                    <input type="text" id="create-name" name="name" required>
-                </div>
-                <div class="form-group">
-                    <div class="label-with-help">
-                        <label for="create-parent">Parent Lock</label>
-                        <div class="help-tooltip">
-                            ⓘ
-                            <span class="help-tooltip-text">Optional parent lock that must be held for this lock to be
-                                acquired</span>
-                        </div>
-                    </div>
-                    <input type="text" id="create-parent" name="parent" placeholder="/parent-lock-name">
+                    <input type="text" id="create-name" name="name" placeholder="my-lock" required>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <div class="label-with-help">
-                            <label for="create-ttl">TTL *</label>
+                            <label for="create-ttl">Default TTL *</label>
                             <div class="help-tooltip">
                                 ⓘ
-                                <span class="help-tooltip-text">Time To Live - How long the lock remains valid before
-                                    expiring</span>
+                                <span class="help-tooltip-text">Default lease duration when acquiring this lock. If not
+                                    specified during acquire, this value is used (e.g., 30s, 5m, 1h)</span>
                             </div>
                         </div>
                         <input type="text" id="create-ttl" name="ttl" placeholder="30s" required>
@@ -138,8 +131,9 @@
                             <label for="create-max-ttl">Max TTL *</label>
                             <div class="help-tooltip">
                                 ⓘ
-                                <span class="help-tooltip-text">Maximum Time To Live - The absolute maximum duration the
-                                    lock can exist</span>
+                                <span class="help-tooltip-text">Maximum allowed lease duration for this lock. Any
+                                    acquire request exceeding this will be capped to this value (e.g., 5m, 1h,
+                                    24h)</span>
                             </div>
                         </div>
                         <input type="text" id="create-max-ttl" name="max_ttl" placeholder="5m" required>
@@ -147,33 +141,54 @@
                 </div>
                 <div class="form-group">
                     <div class="label-with-help">
-                        <label for="create-queue-type">Queue Type</label>
+                        <label for="create-tags">Tags</label>
                         <div class="help-tooltip">
                             ⓘ
-                            <span class="help-tooltip-text">How waiting requests are ordered when the lock becomes
-                                available</span>
+                            <span class="help-tooltip-text">Comma-separated tags for organizing locks (e.g., prod,
+                                backend, api). Max 16 tags.</span>
                         </div>
                     </div>
-                    <select id="create-queue-type" name="queue_type">
-                        <option value="none">None</option>
-                        <option value="fifo">FIFO</option>
-                        <option value="lifo">LIFO</option>
-                    </select>
+                    <input type="text" id="create-tags" name="tags" placeholder="prod, backend, api">
                 </div>
                 <div class="form-group">
                     <div class="label-with-help">
-                        <label for="create-queue-timeout">Queue Timeout</label>
+                        <label for="create-queue-type">Queue Type *</label>
                         <div class="help-tooltip">
                             ⓘ
-                            <span class="help-tooltip-text">How long requests wait in queue before timing out</span>
+                            <span class="help-tooltip-text">How waiting requests are processed when the lock is
+                                released</span>
                         </div>
                     </div>
-                    <input type="text" id="create-queue-timeout" name="queue_timeout" placeholder="1m">
+                    <select id="create-queue-type" name="queue_type" required>
+                        <option value="none">None - No queueing</option>
+                        <option value="fifo" selected>FIFO - First in, first out</option>
+                        <option value="lifo">LIFO - Last in, first out</option>
+                    </select>
                 </div>
-                <div class="form-group">
-                    <label for="create-metadata">Metadata (JSON)</label>
-                    <textarea id="create-metadata" name="metadata" rows="3"
-                        placeholder='{"description": "My lock"}'></textarea>
+                <div class="form-row" id="queue-config-fields">
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="create-queue-timeout">Queue Timeout</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">How long clients can wait in queue before timing out
+                                    (e.g., 5m, 10m). Leave empty for server default.</span>
+                            </div>
+                        </div>
+                        <input type="text" id="create-queue-timeout" name="queue_timeout" placeholder="5m">
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="create-max-queue">Max Queue Size</label>
+                            <div class="help-tooltip">
+                                ⓘ
+                                <span class="help-tooltip-text">Maximum number of clients that can wait for this lock. 0
+                                    = no limit.</span>
+                            </div>
+                        </div>
+                        <input type="number" id="create-max-queue" name="max_queue" placeholder="0" min="0"
+                            max="1048576">
+                    </div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
@@ -183,81 +198,45 @@
         </div>
     </div>
 
-    <div id="update-modal" class="modal" style="display: none;">
+
+    <!-- Release Lock Modal -->
+    <div id="release-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Update Lock</h3>
+                <h3>Release Lock</h3>
                 <span class="modal-close">&times;</span>
             </div>
-            <form id="update-lock-form">
-                <input type="hidden" id="update-lock-name" name="name">
+            <form id="release-lock-form">
+                <input type="hidden" id="release-lock-name" name="lock_name">
                 <div class="form-group">
-                    <div class="label-with-help">
-                        <label for="update-parent">Parent Lock</label>
-                        <div class="help-tooltip">
-                            ⓘ
-                            <span class="help-tooltip-text">Optional parent lock that must be held for this lock to be
-                                acquired</span>
-                        </div>
-                    </div>
-                    <input type="text" id="update-parent" name="parent" placeholder="/parent-lock-name">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <div class="label-with-help">
-                            <label for="update-ttl">TTL *</label>
-                            <div class="help-tooltip">
-                                ⓘ
-                                <span class="help-tooltip-text">Time To Live - How long the lock remains valid before
-                                    expiring</span>
-                            </div>
-                        </div>
-                        <input type="text" id="update-ttl" name="ttl" required>
-                    </div>
-                    <div class="form-group">
-                        <div class="label-with-help">
-                            <label for="update-max-ttl">Max TTL *</label>
-                            <div class="help-tooltip">
-                                ⓘ
-                                <span class="help-tooltip-text">Maximum Time To Live - The absolute maximum duration the
-                                    lock can exist</span>
-                            </div>
-                        </div>
-                        <input type="text" id="update-max-ttl" name="max_ttl" required>
-                    </div>
+                    <label>Lock Name</label>
+                    <input type="text" id="release-lock-name-display" readonly
+                        style="background: #f5f5f5; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                     <div class="label-with-help">
-                        <label for="update-queue-type">Queue Type</label>
+                        <label for="release-client-id">Client ID *</label>
                         <div class="help-tooltip">
                             ⓘ
-                            <span class="help-tooltip-text">How waiting requests are ordered when the lock becomes
-                                available</span>
+                            <span class="help-tooltip-text">The UUID you received when acquiring the lock</span>
                         </div>
                     </div>
-                    <select id="update-queue-type" name="queue_type">
-                        <option value="none">None</option>
-                        <option value="fifo">FIFO</option>
-                        <option value="lifo">LIFO</option>
-                    </select>
+                    <input type="text" id="release-client-id" name="client_id"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
                 </div>
                 <div class="form-group">
                     <div class="label-with-help">
-                        <label for="update-queue-timeout">Queue Timeout</label>
+                        <label for="release-lease-id">Lease ID *</label>
                         <div class="help-tooltip">
                             ⓘ
-                            <span class="help-tooltip-text">How long requests wait in queue before timing out</span>
+                            <span class="help-tooltip-text">The lease ID you received when acquiring the lock</span>
                         </div>
                     </div>
-                    <input type="text" id="update-queue-timeout" name="queue_timeout">
-                </div>
-                <div class="form-group">
-                    <label for="update-metadata">Metadata (JSON)</label>
-                    <textarea id="update-metadata" name="metadata" rows="3"></textarea>
+                    <input type="text" id="release-lease-id" name="lease_id" placeholder="Enter the lease ID" required>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Lock</button>
+                    <button type="submit" class="btn btn-warning">Release Lock</button>
                 </div>
             </form>
         </div>
@@ -439,18 +418,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="owner-history-section">
-                        <h4>Recent Owner History</h4>
-                        <div id="owner-history-table" class="owner-history-table">
-                            <div class="no-data">No ownership history available</div>
-                        </div>
-                        <div id="owner-history-pagination" class="pagination-controls" style="display: none;">
-                            <button id="owner-history-prev" class="btn btn-small" disabled>&lt; Previous</button>
-                            <span id="owner-history-page-info">Page 1 of 1</span>
-                            <button id="owner-history-next" class="btn btn-small" disabled>Next &gt;</button>
-                        </div>
-                    </div>
                 </div>
             </div>
             <div class="modal-actions">
@@ -500,5 +467,7 @@
         });
     </script>
 </body>
+
+</html>
 
 </html>
