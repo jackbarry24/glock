@@ -33,70 +33,49 @@ default_queue_timeout: 5m
 cleanup_interval: 30s
 ```
 
-#### Runtime Configuration
-- GET `/api/config` - Get current configuration
-- POST `/api/config/update` - Update configuration at runtime
-
 ### Endpoints
-- POST `/api/create` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
-- POST `/api/update` { name, ttl?, max_ttl?, metadata, queue_type?, queue_timeout? }
+Base path: `/api`
 
-**Duration Format**: All duration fields accept Go duration strings (e.g., "30s", "5m", "1h", "300ms")
-- DELETE `/api/delete/:name`
-- POST `/api/acquire` { name, owner, owner_id } → Returns lock or queue info
-- POST `/api/refresh` { name, owner_id, token } → Extend lock expiration
-- POST `/api/verify` { name, owner_id, token } → Check ownership
-- POST `/api/release` { name, owner_id, token }  → Release
-- POST `/api/poll` { name, request_id, owner_id } → Check queue status
-- POST `/api/remove` { name, request_id, owner_id } → Remove queued request
-- POST `/api/freeze/:name` → Freeze a lock to prevent acquisition/refresh
-- POST `/api/unfreeze/:name` → Unfreeze a lock to allow acquisition/refresh
-- GET `/api/status` → See all locks and ownership
-- GET `/api/list` → See all locks
+- POST `/locks`
+  - Body: `{ "lock_id": string, "config": { "default_ttl": duration, "max_ttl": duration, "max_queue"?: int, "queue_type"?: "none"|"fifo"|"lifo", "default_timeout"?: duration }, "tags"?: []string }`
+  - Headers: `Idempotency-Key` (optional)
+  - 201 Created / 200 OK → `{ "lock_id": string, "config": { ... }, "created": bool }`
+
+- GET `/locks` → `{ "locks": [string] }`
+- GET `/locks/{lock_id}` → `{ "status": { lock_id, owner?, queue_len, config, tags? } }`
+- DELETE `/locks/{lock_id}` → `{ "lock_id": string, "deleted": bool }`
+
+- POST `/locks/{lock_id}/lease`
+  - Body: `{ "client_id": uuid, "lease_ttl"?: duration, "wait": bool, "timeout"?: duration }`
+  - Headers: `Idempotency-Key` (optional)
+  - 200 granted → `{ state:"granted", lock_id, lease_id, expires_at, fence_token }`
+  - 202 queued → `{ state:"queued", lock_id, wait_id, position, estimated_wait_ms }`
+  - 409 busy → `{ state:"busy", lock_id, owner_client_id, expires_at }`
+
+- PUT `/locks/{lock_id}/lease`
+  - Body: `{ "client_id": uuid, "lease_id": string, "new_ttl"?: duration }`
+  - 200 → `{ state:"granted", lock_id, lease_id, expires_at, fence_token }`
+
+- DELETE `/locks/{lock_id}/lease`
+  - Body: `{ "client_id": uuid, "lease_id": string }`
+  - 200 → `{ state:"released", lock_id, next_owner_client_id? }`
+
+- GET `/locks/{lock_id}/queue?limit=100` → `{ lock_id, queue: [ { wait_id, client_id, position, timeout_at } ] }`
+- DELETE `/locks/{lock_id}/queue/{wait_id}` with body `{ "client_id": uuid }` → `{ removed: bool }`
+
+- GET `/locks/{lock_id}/metrics` → `{ lock_id, metrics: { ... } }`
 
 ### Queue Functionality
 
-Locks can be configured with queue behavior:
+Locks support queues:
 - `queue_type`: `"none"` (default), `"fifo"`, or `"lifo"`
-- `queue_timeout`: Duration string after which queued requests expire (default: "5m")
+- `default_timeout`: server-level fallback for queue wait timeouts
 
-When a lock is unavailable:
-- `none`: Returns error immediately
-- `fifo`/`lifo`: Queues the request and returns `{ "queue": { "request_id": "...", "position": 1 } }`
+When `wait=true` and the lock is held, the server returns 202 with `wait_id` and `position`. On release/expiry, the next waiter is promoted. Clients can poll `GET /locks/{lock_id}` until `status.owner.client_id` matches theirs, or cancel via DELETE queue.
 
-Example create request:
-```json
-POST /api/create
-{
-  "name": "my-lock",
-  "ttl": "30s",
-  "max_ttl": "5m",
-  "queue_type": "fifo",
-  "queue_timeout": "2m"
-}
-```
-
-Clients can poll their queue status using:
-```json
-POST /api/poll
-{
-  "name": "lock-name",
-  "request_id": "returned-from-acquire",
-  "owner_id": "client-uuid"
-}
-```
-
-Response:
-```json
-{
-  "status": "waiting|ready|expired|not_found",
-  "position": 2,  // if waiting
-  "lock": {...}   // if ready
-}
-```
+Note: The Go client library (`glock`) provides enum constants: `glock.QueueNone`, `glock.QueueFIFO`, `glock.QueueLIFO` for type-safe queue configuration.
 
 ### Notes
-- TTL, MaxTTL, and QueueTimeout accept Go duration strings (e.g., "30s", "5m", "1h", "300ms")
-- `owner_id` is expected to be a UUID
-- Queue timeouts automatically clean up expired requests
-- All configuration values can be changed at runtime via `/config/update`
+- Durations accept Go duration strings (e.g., "30s", "5m", "1h", "300ms"). JSON may also encode them as integer nanoseconds.
+- `client_id` is expected to be a UUID
+- Queue timeouts automatically clean up expired entries

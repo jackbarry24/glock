@@ -23,7 +23,7 @@ func newShard(id int, cfg ServerConfig, clock Clock) *Shard {
 		clock:    clock,
 		msgCh:    make(chan Msg, 1000),
 		stopCh:   make(chan struct{}),
-		locks:    make(map[string]*lockState),
+		locks:    make(map[string]*Lock),
 		idemKeys: make(map[string]*idemEntry),
 	}
 }
@@ -35,9 +35,29 @@ func (sh *Shard) run() {
 	for {
 		select {
 		case <-sh.stopCh:
+			// stop all locks gracefully
+			for _, lk := range sh.locks {
+				done := make(chan struct{})
+				lk.msgCh <- lockStop{Reply: done}
+				<-done
+			}
 			return
 		case <-ticker.C:
-			sh.processExpiries()
+			// drive expirations in locks
+			for _, lk := range sh.locks {
+				select {
+				case lk.msgCh <- lockTick{}:
+				default:
+					// skip if the lock's mailbox is full
+				}
+			}
+			// expire shard-level idempotency entries (used for Create)
+			now := sh.clock.Now()
+			for key, entry := range sh.idemKeys {
+				if entry.expiresAt.Before(now) {
+					delete(sh.idemKeys, key)
+				}
+			}
 		case msg := <-sh.msgCh:
 			sh.processMessage(msg)
 		}
@@ -75,36 +95,14 @@ func (sh *Shard) processMessage(msg Msg) {
 	}
 }
 
+// processExpiries performs a tick across all locks and cleans shard-level idempotency.
 func (sh *Shard) processExpiries() {
 	now := sh.clock.Now()
-
-	for lockID, lock := range sh.locks {
-		if lock.owner != nil && lock.owner.ExpiresAt.Before(now) {
-			holdDuration := now.Sub(lock.owner.AcquiredAt)
-			holdNs := holdDuration.Nanoseconds()
-
-			lock.metrics.TotalHoldTimeNs += holdNs
-			lock.metrics.totalHoldCount++
-			if lock.metrics.totalHoldCount > 0 {
-				lock.metrics.AvgHoldTimeNs = lock.metrics.TotalHoldTimeNs / lock.metrics.totalHoldCount
-			}
-			if holdNs > lock.metrics.MaxHoldTimeNs {
-				lock.metrics.MaxHoldTimeNs = holdNs
-			}
-			lock.metrics.TTLExpirations++
-
-			lock.owner = nil
-			sh.promoteFromQueue(lockID, lock)
-		}
-
-		for i := len(lock.queue) - 1; i >= 0; i-- {
-			if lock.queue[i].timeoutAt.Before(now) {
-				lock.metrics.QueueTimeouts++
-				lock.queue = append(lock.queue[:i], lock.queue[i+1:]...)
-			}
-		}
+	for _, lk := range sh.locks {
+		done := make(chan struct{})
+		lk.msgCh <- lockTick{Reply: done}
+		<-done
 	}
-
 	for key, entry := range sh.idemKeys {
 		if entry.expiresAt.Before(now) {
 			delete(sh.idemKeys, key)
@@ -132,24 +130,13 @@ func (sh *Shard) handleCreate(req CreateReq) {
 		resp.Err = ErrCapacityReached
 		resp.Created = false
 	} else {
-		tags := req.Tags
-		if len(tags) > 16 {
-			tags = tags[:16]
+		// Apply server-level default queue timeout if lock-level not provided
+		if req.Config.DefaultTimeout.Duration() == 0 && sh.cfg.DefaultQueueTimeout > 0 {
+			req.Config.DefaultTimeout = Duration(sh.cfg.DefaultQueueTimeout)
 		}
-
-		now := sh.clock.Now()
-		sh.locks[req.LockID] = &lockState{
-			cfg:       req.Config,
-			owner:     nil,
-			queue:     make([]queueEntry, 0),
-			createdAt: now,
-			metrics: &LockMetrics{
-				CreatedAt:      now,
-				LastActivityAt: now,
-				uniqueOwnerIDs: make(map[string]bool),
-			},
-			tags: tags,
-		}
+		lk := newLock(req.LockID, req.Config, req.Tags, sh.clock)
+		sh.locks[req.LockID] = lk
+		go lk.run()
 		resp.Created = true
 	}
 
@@ -164,331 +151,57 @@ func (sh *Shard) handleCreate(req CreateReq) {
 }
 
 func (sh *Shard) handleAcquire(req AcquireReq) {
-	if req.IdemKey != "" {
-		if cached, ok := sh.idemKeys[req.IdemKey]; ok && cached.expiresAt.After(sh.clock.Now()) {
-			req.Reply <- cached.response.(AcquireResp)
-			return
-		}
-	}
-
-	resp := AcquireResp{
-		LockID: req.LockID,
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		if sh.cfg.Capacity > 0 && len(sh.locks) >= sh.cfg.Capacity {
-			resp.State = "busy"
-			resp.Err = ErrCapacityReached
-			req.Reply <- resp
-			return
-		}
-
-		now := sh.clock.Now()
-		lock = &lockState{
-			cfg: LockConfig{
-				MaxTTL:         Duration(sh.cfg.DefaultMaxTTL),
-				DefaultTTL:     Duration(sh.cfg.DefaultTTL),
-				MaxQueue:       sh.cfg.DefaultQueue,
-				QueueType:      QueueTypeFIFO,
-				DefaultTimeout: Duration(sh.cfg.DefaultQueueTimeout),
-			},
-			owner:     nil,
-			queue:     make([]queueEntry, 0),
-			createdAt: now,
-			metrics: &LockMetrics{
-				CreatedAt:      now,
-				LastActivityAt: now,
-				uniqueOwnerIDs: make(map[string]bool),
-			},
-		}
-		sh.locks[req.LockID] = lock
+		req.Reply <- AcquireResp{LockID: req.LockID, State: "not_found", Err: ErrLockNotFound}
+		return
 	}
-
-	lock.metrics.TotalAcquires++
-	lock.metrics.LastActivityAt = sh.clock.Now()
-
-	ttl := req.LeaseTTL.Duration()
-	if ttl == 0 {
-		ttl = lock.cfg.DefaultTTL.Duration()
-	}
-	if ttl > lock.cfg.MaxTTL.Duration() {
-		ttl = lock.cfg.MaxTTL.Duration()
-	}
-
-	if lock.owner == nil {
-		leaseID := generateID()
-		now := sh.clock.Now()
-		expiresAt := now.Add(ttl)
-		lock.fenceToken++
-		lock.owner = &Lease{
-			LeaseID:    leaseID,
-			ClientID:   req.ClientID,
-			AcquiredAt: now,
-			ExpiresAt:  expiresAt,
-			FenceToken: lock.fenceToken,
-		}
-
-		lock.metrics.SuccessAcquires++
-		lock.metrics.OwnerChanges++
-		if !lock.metrics.uniqueOwnerIDs[req.ClientID] {
-			lock.metrics.uniqueOwnerIDs[req.ClientID] = true
-			lock.metrics.UniqueOwners = len(lock.metrics.uniqueOwnerIDs)
-		}
-
-		resp.State = "granted"
-		resp.LeaseID = leaseID
-		resp.OwnerClientID = req.ClientID
-		resp.ExpiresAt = expiresAt
-		resp.FenceToken = lock.fenceToken
-	} else if req.Wait {
-		if lock.cfg.MaxQueue > 0 && len(lock.queue) >= lock.cfg.MaxQueue {
-			lock.metrics.FailedAcquires++
-			resp.State = "busy"
-			resp.Err = ErrQueueFull
-		} else {
-			waitID := generateID()
-			timeout := req.Timeout.Duration()
-			if timeout == 0 {
-				timeout = lock.cfg.DefaultTimeout.Duration()
-				if timeout == 0 {
-					timeout = sh.cfg.DefaultQueueTimeout
-				}
-			}
-
-			entry := queueEntry{
-				waitID:    waitID,
-				clientID:  req.ClientID,
-				timeoutAt: sh.clock.Now().Add(timeout),
-				addedAt:   sh.clock.Now(),
-			}
-			lock.queue = append(lock.queue, entry)
-			lock.metrics.TotalQueued++
-
-			resp.State = "queued"
-			resp.WaitID = waitID
-			resp.Position = len(lock.queue)
-			resp.EstimatedWaitMs = int64(lock.owner.ExpiresAt.Sub(sh.clock.Now()).Milliseconds())
-		}
-	} else {
-		lock.metrics.FailedAcquires++
-		resp.State = "busy"
-		resp.OwnerClientID = lock.owner.ClientID
-		resp.ExpiresAt = lock.owner.ExpiresAt
-		resp.Err = ErrLockBusy
-	}
-
-	if req.IdemKey != "" {
-		sh.idemKeys[req.IdemKey] = &idemEntry{
-			response:  resp,
-			expiresAt: sh.clock.Now().Add(24 * time.Hour),
-		}
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleRefresh(req RefreshReq) {
-	if req.IdemKey != "" {
-		if cached, ok := sh.idemKeys[req.IdemKey]; ok && cached.expiresAt.After(sh.clock.Now()) {
-			req.Reply <- cached.response.(RefreshResp)
-			return
-		}
-	}
-
-	resp := RefreshResp{
-		LockID: req.LockID,
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- RefreshResp{LockID: req.LockID, Err: ErrLockNotFound}
 		return
 	}
-
-	if lock.owner == nil {
-		resp.Err = ErrInvalidLease
-		req.Reply <- resp
-		return
-	}
-
-	if lock.owner.LeaseID != req.LeaseID || lock.owner.ClientID != req.ClientID {
-		resp.Err = ErrNotOwner
-		req.Reply <- resp
-		return
-	}
-
-	lock.metrics.TotalRefreshes++
-	lock.metrics.LastActivityAt = sh.clock.Now()
-
-	ttl := req.NewTTL.Duration()
-	if ttl == 0 {
-		ttl = lock.cfg.DefaultTTL.Duration()
-	}
-	if ttl > lock.cfg.MaxTTL.Duration() {
-		ttl = lock.cfg.MaxTTL.Duration()
-	}
-
-	newExpiry := sh.clock.Now().Add(ttl)
-	lock.owner.ExpiresAt = newExpiry
-
-	resp.State = "granted"
-	resp.LeaseID = req.LeaseID
-	resp.ExpiresAt = newExpiry
-	resp.FenceToken = lock.owner.FenceToken
-
-	if req.IdemKey != "" {
-		sh.idemKeys[req.IdemKey] = &idemEntry{
-			response:  resp,
-			expiresAt: sh.clock.Now().Add(24 * time.Hour),
-		}
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleRelease(req ReleaseReq) {
-	if req.IdemKey != "" {
-		if cached, ok := sh.idemKeys[req.IdemKey]; ok && cached.expiresAt.After(sh.clock.Now()) {
-			req.Reply <- cached.response.(ReleaseResp)
-			return
-		}
-	}
-
-	resp := ReleaseResp{
-		LockID: req.LockID,
-		State:  "released",
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- ReleaseResp{LockID: req.LockID, State: "released", Err: ErrLockNotFound}
 		return
 	}
-
-	if lock.owner == nil {
-		resp.Err = ErrInvalidLease
-		req.Reply <- resp
-		return
-	}
-
-	if lock.owner.LeaseID != req.LeaseID || lock.owner.ClientID != req.ClientID {
-		resp.Err = ErrNotOwner
-		req.Reply <- resp
-		return
-	}
-
-	now := sh.clock.Now()
-	holdDuration := now.Sub(lock.owner.AcquiredAt)
-	holdNs := holdDuration.Nanoseconds()
-
-	lock.metrics.TotalReleases++
-	lock.metrics.LastActivityAt = now
-	lock.metrics.TotalHoldTimeNs += holdNs
-	lock.metrics.totalHoldCount++
-	if lock.metrics.totalHoldCount > 0 {
-		lock.metrics.AvgHoldTimeNs = lock.metrics.TotalHoldTimeNs / lock.metrics.totalHoldCount
-	}
-	if holdNs > lock.metrics.MaxHoldTimeNs {
-		lock.metrics.MaxHoldTimeNs = holdNs
-	}
-
-	lock.owner = nil
-
-	if promoted := sh.promoteFromQueue(req.LockID, lock); promoted != nil {
-		resp.NextOwnerClientID = promoted.ClientID
-		lock.metrics.OwnerChanges++
-	}
-
-	if req.IdemKey != "" {
-		sh.idemKeys[req.IdemKey] = &idemEntry{
-			response:  resp,
-			expiresAt: sh.clock.Now().Add(24 * time.Hour),
-		}
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleStatus(req StatusReq) {
-	resp := StatusResp{}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- StatusResp{Err: ErrLockNotFound}
 		return
 	}
-
-	resp.Status = LockStatus{
-		LockID:   req.LockID,
-		Owner:    lock.owner,
-		QueueLen: len(lock.queue),
-		Config:   lock.cfg,
-		Tags:     lock.tags,
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleQueueGet(req QueueGetReq) {
-	resp := QueueGetResp{
-		LockID: req.LockID,
-		Queue:  make([]WaitEntryView, 0),
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- QueueGetResp{LockID: req.LockID, Queue: nil, Err: ErrLockNotFound}
 		return
 	}
-
-	limit := req.Limit
-	if limit <= 0 || limit > len(lock.queue) {
-		limit = len(lock.queue)
-	}
-
-	for i := 0; i < limit; i++ {
-		entry := lock.queue[i]
-		resp.Queue = append(resp.Queue, WaitEntryView{
-			WaitID:    entry.waitID,
-			ClientID:  entry.clientID,
-			Position:  i + 1,
-			TimeoutAt: entry.timeoutAt,
-		})
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleQueueDel(req QueueDelReq) {
-	resp := QueueDelResp{
-		Removed: false,
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- QueueDelResp{Removed: false, Err: ErrLockNotFound}
 		return
 	}
-
-	for i, entry := range lock.queue {
-		if entry.waitID == req.WaitID && entry.clientID == req.ClientID {
-			lock.queue = append(lock.queue[:i], lock.queue[i+1:]...)
-			resp.Removed = true
-			break
-		}
-	}
-
-	if !resp.Removed {
-		resp.Err = ErrWaitNotFound
-	}
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleDelete(req DeleteReq) {
@@ -497,7 +210,11 @@ func (sh *Shard) handleDelete(req DeleteReq) {
 		Deleted: false,
 	}
 
-	if _, exists := sh.locks[req.LockID]; exists {
+	if lk, exists := sh.locks[req.LockID]; exists {
+		// Stop the lock actor before removing it to avoid goroutine leaks
+		done := make(chan struct{})
+		lk.msgCh <- lockStop{Reply: done}
+		<-done
 		delete(sh.locks, req.LockID)
 		resp.Deleted = true
 	} else {
@@ -515,87 +232,15 @@ func (sh *Shard) handleList(req listReq) {
 	req.Reply <- lockIDs
 }
 
-func (sh *Shard) promoteFromQueue(lockID string, lock *lockState) *Lease {
-	if len(lock.queue) == 0 {
-		return nil
-	}
-
-	var entry queueEntry
-
-	if lock.cfg.QueueType == QueueTypeLIFO {
-		entry = lock.queue[len(lock.queue)-1]
-		lock.queue = lock.queue[:len(lock.queue)-1]
-	} else {
-		entry = lock.queue[0]
-		lock.queue = lock.queue[1:]
-	}
-
-	now := sh.clock.Now()
-	queueDuration := now.Sub(entry.addedAt)
-	queueNs := queueDuration.Nanoseconds()
-
-	lock.metrics.totalQueueTimeNs += queueNs
-	lock.metrics.queuePromotions++
-	if lock.metrics.queuePromotions > 0 {
-		lock.metrics.AvgQueueTimeNs = lock.metrics.totalQueueTimeNs / lock.metrics.queuePromotions
-	}
-
-	ttl := lock.cfg.DefaultTTL.Duration()
-	leaseID := generateID()
-	expiresAt := now.Add(ttl)
-	lock.fenceToken++
-
-	lock.owner = &Lease{
-		LeaseID:    leaseID,
-		ClientID:   entry.clientID,
-		AcquiredAt: now,
-		ExpiresAt:  expiresAt,
-		FenceToken: lock.fenceToken,
-	}
-
-	if !lock.metrics.uniqueOwnerIDs[entry.clientID] {
-		lock.metrics.uniqueOwnerIDs[entry.clientID] = true
-		lock.metrics.UniqueOwners = len(lock.metrics.uniqueOwnerIDs)
-	}
-
-	return lock.owner
-}
+// promotions handled inside Lock actor
 
 func (sh *Shard) handleMetrics(req MetricsReq) {
-	resp := MetricsResp{
-		LockID: req.LockID,
-	}
-
 	lock, exists := sh.locks[req.LockID]
 	if !exists {
-		resp.Err = ErrLockNotFound
-		req.Reply <- resp
+		req.Reply <- MetricsResp{LockID: req.LockID, Err: ErrLockNotFound}
 		return
 	}
-
-	if lock.metrics == nil {
-		now := sh.clock.Now()
-		lock.metrics = &LockMetrics{
-			CreatedAt:      lock.createdAt,
-			LastActivityAt: now,
-			uniqueOwnerIDs: make(map[string]bool),
-		}
-	}
-
-	metrics := *lock.metrics
-	metrics.CurrentQueueLen = len(lock.queue)
-
-	if lock.owner != nil {
-		now := sh.clock.Now()
-		currentHoldDuration := now.Sub(lock.owner.AcquiredAt)
-		metrics.CurrentHoldTimeNs = currentHoldDuration.Nanoseconds()
-	} else {
-		metrics.CurrentHoldTimeNs = 0
-	}
-
-	resp.Metrics = metrics
-
-	req.Reply <- resp
+	lock.msgCh <- req
 }
 
 func (sh *Shard) handleAllStatus(req AllStatusReq) {
@@ -604,13 +249,13 @@ func (sh *Shard) handleAllStatus(req AllStatusReq) {
 	}
 
 	for lockID, lock := range sh.locks {
-		resp.Statuses = append(resp.Statuses, LockStatus{
-			LockID:   lockID,
-			Owner:    lock.owner,
-			QueueLen: len(lock.queue),
-			Config:   lock.cfg,
-			Tags:     lock.tags,
-		})
+		reply := make(chan StatusResp, 1)
+		lock.msgCh <- StatusReq{LockID: lockID, Reply: reply}
+		s := <-reply
+		if s.Err != nil {
+			continue
+		}
+		resp.Statuses = append(resp.Statuses, s.Status)
 	}
 
 	req.Reply <- resp

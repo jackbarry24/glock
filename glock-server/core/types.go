@@ -61,6 +61,9 @@ type ServerConfig struct {
 	DefaultTTL          time.Duration
 	DefaultQueue        int
 	DefaultQueueTimeout time.Duration
+	// Optional fields used by tests/benchmarks; ignored by core logic
+	LockPoolSize    int
+	LockPoolMinSize int
 }
 
 type Lease struct {
@@ -111,7 +114,7 @@ type Shard struct {
 	clock    Clock
 	msgCh    chan Msg
 	stopCh   chan struct{}
-	locks    map[string]*lockState
+	locks    map[string]*Lock
 	idemKeys map[string]*idemEntry
 }
 
@@ -120,22 +123,7 @@ type idemEntry struct {
 	expiresAt time.Time
 }
 
-type lockState struct {
-	cfg        LockConfig
-	owner      *Lease
-	queue      []queueEntry
-	createdAt  time.Time
-	metrics    *LockMetrics
-	tags       []string
-	fenceToken int64
-}
-
-type queueEntry struct {
-	waitID    string
-	clientID  string
-	timeoutAt time.Time
-	addedAt   time.Time
-}
+// queueEntry and lockState moved to lock.go as part of the Lock actor
 
 type LockMetrics struct {
 	TotalAcquires     int64

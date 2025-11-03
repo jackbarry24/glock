@@ -108,6 +108,7 @@ func DeleteHandler(s *Server) gin.HandlerFunc {
 // @Success 200 {object} AcquireResp "Lock acquired (granted)"
 // @Success 202 {object} AcquireResp "Added to queue (queued)"
 // @Success 409 {object} AcquireResp "Lock is busy"
+// @Failure 404 {object} AcquireResp "Lock not found"
 // @Failure 400 {object} ErrorResp "Invalid request"
 // @Failure 503 {object} ErrorResp "Queue full or capacity reached"
 // @Router /locks/{lock_id}/lease [post]

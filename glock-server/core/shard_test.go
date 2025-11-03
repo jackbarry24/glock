@@ -221,7 +221,7 @@ func TestShardAcquire(t *testing.T) {
 		}
 	})
 
-	t.Run("auto-create lock on acquire", func(t *testing.T) {
+	t.Run("acquire nonexistent lock", func(t *testing.T) {
 		replyCh := make(chan AcquireResp, 1)
 		req := AcquireReq{
 			LockID:   "auto-created-lock",
@@ -232,12 +232,14 @@ func TestShardAcquire(t *testing.T) {
 		sh.handleAcquire(req)
 		resp := <-replyCh
 
-		if resp.State != "granted" {
-			t.Errorf("State = %s, want granted", resp.State)
+		if resp.State != "not_found" {
+			t.Errorf("State = %s, want not_found", resp.State)
 		}
-
-		if _, exists := sh.locks["auto-created-lock"]; !exists {
-			t.Error("Lock should be auto-created")
+		if resp.Err != ErrLockNotFound {
+			t.Errorf("Expected ErrLockNotFound, got %v", resp.Err)
+		}
+		if _, exists := sh.locks["auto-created-lock"]; exists {
+			t.Error("Lock should not be auto-created")
 		}
 	})
 }
@@ -1100,7 +1102,8 @@ func TestShardCapacityEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("acquire auto-create exceeds capacity", func(t *testing.T) {
+	// acquire on a nonexistent lock should return not found, irrespective of capacity
+	t.Run("acquire nonexistent returns not_found at capacity", func(t *testing.T) {
 		acquireCh := make(chan AcquireResp, 1)
 		sh.handleAcquire(AcquireReq{
 			LockID:   "lock-4",
@@ -1109,11 +1112,11 @@ func TestShardCapacityEnforcement(t *testing.T) {
 		})
 		resp := <-acquireCh
 
-		if resp.State == "granted" {
-			t.Error("Acquire should not auto-create when capacity reached")
+		if resp.State != "not_found" {
+			t.Errorf("State = %s, want not_found", resp.State)
 		}
-		if resp.Err != ErrCapacityReached {
-			t.Errorf("Expected ErrCapacityReached, got %v", resp.Err)
+		if resp.Err != ErrLockNotFound {
+			t.Errorf("Expected ErrLockNotFound, got %v", resp.Err)
 		}
 	})
 
