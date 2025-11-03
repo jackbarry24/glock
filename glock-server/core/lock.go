@@ -138,7 +138,8 @@ func (l *Lock) handleAcquire(req AcquireReq) {
 	if ttl == 0 {
 		ttl = l.cfg.DefaultTTL.Duration()
 	}
-	if ttl > l.cfg.MaxTTL.Duration() {
+	// If MaxTTL == 0 => infinite; else clamp per-call TTL to MaxTTL
+	if l.cfg.MaxTTL.Duration() > 0 && ttl > l.cfg.MaxTTL.Duration() {
 		ttl = l.cfg.MaxTTL.Duration()
 	}
 
@@ -146,6 +147,12 @@ func (l *Lock) handleAcquire(req AcquireReq) {
 		leaseID := generateID()
 		now := l.clock.Now()
 		expiresAt := now.Add(ttl)
+		if l.cfg.MaxTTL.Duration() > 0 {
+			maxExpiry := now.Add(l.cfg.MaxTTL.Duration())
+			if expiresAt.After(maxExpiry) {
+				expiresAt = maxExpiry
+			}
+		}
 		l.fenceToken++
 		l.owner = &Lease{
 			LeaseID:    leaseID,
@@ -168,7 +175,7 @@ func (l *Lock) handleAcquire(req AcquireReq) {
 		resp.ExpiresAt = expiresAt
 		resp.FenceToken = l.fenceToken
 	} else if req.Wait {
-		if l.cfg.MaxQueue > 0 && len(l.queue) >= l.cfg.MaxQueue {
+		if l.cfg.QueueCapacity > 0 && len(l.queue) >= l.cfg.QueueCapacity {
 			l.metrics.FailedAcquires++
 			resp.State = "busy"
 			resp.Err = ErrQueueFull
@@ -176,7 +183,7 @@ func (l *Lock) handleAcquire(req AcquireReq) {
 			waitID := generateID()
 			timeout := req.Timeout.Duration()
 			if timeout == 0 {
-				timeout = l.cfg.DefaultTimeout.Duration()
+				timeout = l.cfg.QueueTimeout.Duration()
 			}
 			if timeout == 0 {
 				timeout = 0 // no queue timeout fallback at lock level; shard provides default on creation
@@ -242,11 +249,25 @@ func (l *Lock) handleRefresh(req RefreshReq) {
 	if ttl == 0 {
 		ttl = l.cfg.DefaultTTL.Duration()
 	}
-	if ttl > l.cfg.MaxTTL.Duration() {
+
+	if l.cfg.MaxTTL.Duration() > 0 && ttl > l.cfg.MaxTTL.Duration() {
 		ttl = l.cfg.MaxTTL.Duration()
 	}
 
 	newExpiry := l.clock.Now().Add(ttl)
+
+	if l.cfg.MaxTTL.Duration() > 0 {
+		capExpiry := l.owner.AcquiredAt.Add(l.cfg.MaxTTL.Duration())
+		if newExpiry.After(capExpiry) {
+			newExpiry = capExpiry
+		}
+		// If already at or past absolute cap, don't decrease below the cap
+		if l.owner.ExpiresAt.After(capExpiry) || l.owner.ExpiresAt.Equal(capExpiry) {
+			if newExpiry.Before(capExpiry) {
+				newExpiry = capExpiry
+			}
+		}
+	}
 	l.owner.ExpiresAt = newExpiry
 
 	resp.State = "granted"
@@ -423,8 +444,17 @@ func (l *Lock) promoteFromQueue() *Lease {
 	}
 
 	ttl := l.cfg.DefaultTTL.Duration()
+	if l.cfg.MaxTTL.Duration() > 0 && ttl > l.cfg.MaxTTL.Duration() {
+		ttl = l.cfg.MaxTTL.Duration()
+	}
 	leaseID := generateID()
 	expiresAt := now.Add(ttl)
+	if l.cfg.MaxTTL.Duration() > 0 {
+		maxExpiry := now.Add(l.cfg.MaxTTL.Duration())
+		if expiresAt.After(maxExpiry) {
+			expiresAt = maxExpiry
+		}
+	}
 	l.fenceToken++
 
 	l.owner = &Lease{

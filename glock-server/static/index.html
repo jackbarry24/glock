@@ -117,11 +117,12 @@
                 <div class="form-row">
                     <div class="form-group">
                         <div class="label-with-help">
-                            <label for="create-ttl">Default TTL *</label>
+                            <label for="create-ttl">Default Lease TTL *</label>
                             <div class="help-tooltip">
                                 ⓘ
                                 <span class="help-tooltip-text">Default lease duration when acquiring this lock. If not
-                                    specified during acquire, this value is used (e.g., 30s, 5m, 1h)</span>
+                                    specified during acquire, this value is used (e.g., 30s, 5m, 1h). Leave empty to
+                                    inherit from server default.</span>
                             </div>
                         </div>
                         <input type="text" id="create-ttl" name="ttl" placeholder="30s" required>
@@ -133,7 +134,7 @@
                                 ⓘ
                                 <span class="help-tooltip-text">Maximum allowed lease duration for this lock. Any
                                     acquire request exceeding this will be capped to this value (e.g., 5m, 1h,
-                                    24h)</span>
+                                    24h). Set to 0 for unlimited (no refresh cap).</span>
                             </div>
                         </div>
                         <input type="text" id="create-max-ttl" name="max_ttl" placeholder="5m" required>

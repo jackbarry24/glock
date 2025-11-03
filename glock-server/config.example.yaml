@@ -6,6 +6,7 @@ port: 8080
 host: ""  # Leave empty to bind to all interfaces (0.0.0.0)
 
 # Server capacity
+num_shards: 32  # Number of shards for sharding the locks
 capacity: 10000  # Maximum number of locks that can be created (max: 1048576 = 2^20)
 
 # Lock defaults
@@ -14,4 +15,4 @@ default_max_ttl: 5m     # Maximum allowed lease duration
 
 # Queue configuration
 default_queue_timeout: 5m  # Default timeout for clients waiting in queue
-queue_max_size: 1024       # Maximum number of clients that can wait in queue per lock (max: 1048576 = 2^20)
+default_queue_capacity: 1024       # Maximum number of clients that can wait in queue per lock (max: 1048576 = 2^20)

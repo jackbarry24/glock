@@ -130,10 +130,14 @@ func (sh *Shard) handleCreate(req CreateReq) {
 		resp.Err = ErrCapacityReached
 		resp.Created = false
 	} else {
-		// Apply server-level default queue timeout if lock-level not provided
-		if req.Config.DefaultTimeout.Duration() == 0 && sh.cfg.DefaultQueueTimeout > 0 {
-			req.Config.DefaultTimeout = Duration(sh.cfg.DefaultQueueTimeout)
+		if req.Config.QueueTimeout.Duration() == 0 && sh.cfg.DefaultQueueTimeout > 0 {
+			req.Config.QueueTimeout = Duration(sh.cfg.DefaultQueueTimeout)
 		}
+
+		if req.Config.DefaultTTL.Duration() == 0 && sh.cfg.DefaultTTL > 0 {
+			req.Config.DefaultTTL = Duration(sh.cfg.DefaultTTL)
+		}
+
 		lk := newLock(req.LockID, req.Config, req.Tags, sh.clock)
 		sh.locks[req.LockID] = lk
 		go lk.run()

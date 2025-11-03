@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"glock-server/core"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"glock-server/core"
 	_ "glock-server/docs"
 )
 
@@ -24,20 +26,20 @@ import (
 // @host localhost:8080
 // @BasePath /api
 func main() {
-	httpConfigFile := os.Getenv("GLOCK_CONFIG_FILE")
-	httpConfig, err := core.LoadConfig(httpConfigFile)
+	cfgFile := os.Getenv("GLOCK_CONFIG_FILE")
+	cfg, err := core.LoadConfig(cfgFile)
 	if err != nil {
 		log.Fatalf("Failed to load HTTP configuration: %v", err)
 	}
 
 	serverConfig := core.ServerConfig{
-		NumShards:           32,
-		ExpiryTick:          50 * time.Millisecond,
-		Capacity:            httpConfig.Capacity,
-		DefaultMaxTTL:       httpConfig.DefaultMaxTTL,
-		DefaultTTL:          httpConfig.DefaultTTL,
-		DefaultQueue:        httpConfig.QueueMaxSize,
-		DefaultQueueTimeout: httpConfig.DefaultQueueTimeout,
+		NumShards:            cfg.NumShards,
+		ExpiryTick:           50 * time.Millisecond,
+		Capacity:             cfg.Capacity,
+		DefaultMaxTTL:        cfg.DefaultMaxTTL,
+		DefaultTTL:           cfg.DefaultTTL,
+		DefaultQueueCapacity: cfg.DefaultQueueCapacity,
+		DefaultQueueTimeout:  cfg.DefaultQueueTimeout,
 	}
 
 	srv, err := core.NewServer(serverConfig)
@@ -52,10 +54,29 @@ func main() {
 
 	r.Static("/static", "./static")
 	r.StaticFile("/favicon.ico", "./static/favicon.ico")
-	r.StaticFile("/", "./static/index.html")
+	r.GET("/", func(c *gin.Context) {
+		ua := c.GetHeader("User-Agent")
+		accept := c.GetHeader("Accept")
+
+		if strings.Contains(ua, "curl") || !strings.Contains(accept, "text/html") {
+			c.String(http.StatusOK, "Welcome to GLock Server")
+			return
+		}
+
+		c.File("./static/index.html")
+	})
 
 	api := r.Group("/api")
 	{
+		api.GET("", func(c *gin.Context) {
+			c.String(http.StatusOK, "Welcome to the GLock Server API. Swagger @ /swagger/index.html")
+		})
+		api.GET("/status", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"status": "ok",
+			})
+		})
+
 		locks := api.Group("/locks")
 		{
 			locks.GET("", core.ListHandler(srv))
@@ -73,9 +94,12 @@ func main() {
 		}
 	}
 
+	r.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, "/swagger/index.html")
+	})
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	addr := fmt.Sprintf("%s:%d", httpConfig.Host, httpConfig.Port)
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	log.Printf("Starting HTTP server on %s", addr)
 
 	quit := make(chan os.Signal, 1)

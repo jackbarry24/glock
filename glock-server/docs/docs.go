@@ -508,7 +508,28 @@ const docTemplate = `{
     },
     "definitions": {
         "core.AcquireLeaseRequest": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "client_id"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lease_ttl": {
+                    "type": "string",
+                    "example": "30s"
+                },
+                "timeout": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "wait": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
         },
         "core.AcquireResp": {
             "type": "object",
@@ -544,7 +565,30 @@ const docTemplate = `{
             }
         },
         "core.CreateLockRequest": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "config",
+                "lock_id"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/core.LockConfig"
+                },
+                "lock_id": {
+                    "type": "string",
+                    "example": "my-resource-lock"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "critical"
+                    ]
+                }
+            }
         },
         "core.CreateResp": {
             "type": "object",
@@ -572,9 +616,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "core.Duration": {
-            "type": "object"
         },
         "core.ErrorResp": {
             "type": "object",
@@ -621,7 +662,37 @@ const docTemplate = `{
             }
         },
         "core.LockConfig": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "default_lease_ttl",
+                "max_ttl"
+            ],
+            "properties": {
+                "default_lease_ttl": {
+                    "type": "string",
+                    "example": "30s"
+                },
+                "max_ttl": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "queue_capacity": {
+                    "type": "integer",
+                    "example": 1024
+                },
+                "queue_timeout": {
+                    "type": "string",
+                    "example": "5m"
+                },
+                "queue_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/core.QueueType"
+                        }
+                    ],
+                    "example": "fifo"
+                }
+            }
         },
         "core.LockMetrics": {
             "type": "object",
@@ -771,8 +842,39 @@ const docTemplate = `{
                 }
             }
         },
+        "core.QueueType": {
+            "type": "string",
+            "enum": [
+                "none",
+                "fifo",
+                "lifo"
+            ],
+            "x-enum-varnames": [
+                "QueueTypeNone",
+                "QueueTypeFIFO",
+                "QueueTypeLIFO"
+            ]
+        },
         "core.RefreshLeaseRequest": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "client_id",
+                "lease_id"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lease_id": {
+                    "type": "string",
+                    "example": "lease-123456"
+                },
+                "new_ttl": {
+                    "type": "string",
+                    "example": "30s"
+                }
+            }
         },
         "core.RefreshResp": {
             "type": "object",

@@ -35,13 +35,13 @@ func (f *FakeClock) Set(t time.Time) {
 
 func testShardConfig() ServerConfig {
 	return ServerConfig{
-		NumShards:           1,
-		ExpiryTick:          50 * time.Millisecond,
-		Capacity:            0,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            1,
+		ExpiryTick:           50 * time.Millisecond,
+		Capacity:             0,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 }
 
@@ -55,10 +55,10 @@ func TestShardCreate(t *testing.T) {
 		req := CreateReq{
 			LockID: "test-lock",
 			Config: LockConfig{
-				MaxTTL:     Duration(60 * time.Second),
-				DefaultTTL: Duration(10 * time.Second),
-				MaxQueue:   5,
-				QueueType:  QueueTypeFIFO,
+				MaxTTL:        Duration(60 * time.Second),
+				DefaultTTL:    Duration(10 * time.Second),
+				QueueCapacity: 5,
+				QueueType:     QueueTypeFIFO,
 			},
 			Reply: replyCh,
 		}
@@ -82,10 +82,10 @@ func TestShardCreate(t *testing.T) {
 		req := CreateReq{
 			LockID: "test-lock",
 			Config: LockConfig{
-				MaxTTL:     Duration(60 * time.Second),
-				DefaultTTL: Duration(10 * time.Second),
-				MaxQueue:   5,
-				QueueType:  QueueTypeFIFO,
+				MaxTTL:        Duration(60 * time.Second),
+				DefaultTTL:    Duration(10 * time.Second),
+				QueueCapacity: 5,
+				QueueType:     QueueTypeFIFO,
 			},
 			Reply: replyCh,
 		}
@@ -108,10 +108,10 @@ func TestShardAcquire(t *testing.T) {
 	sh := newShard(0, cfg, clock)
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(60 * time.Second),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   3,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	createCh := make(chan CreateResp, 1)
@@ -253,10 +253,10 @@ func TestShardRefresh(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -377,10 +377,10 @@ func TestShardRelease(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -471,10 +471,10 @@ func TestShardReleasePromotesQueue(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -531,10 +531,10 @@ func TestShardQueueOperations(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -634,10 +634,10 @@ func TestShardLIFOQueue(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeLIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeLIFO,
 		},
 		Reply: createCh,
 	})
@@ -687,10 +687,10 @@ func TestShardExpiry(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -728,10 +728,10 @@ func TestShardQueueTimeout(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -777,10 +777,10 @@ func TestShardDelete(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -832,10 +832,10 @@ func TestShardStatus(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -907,10 +907,10 @@ func TestShardMetrics(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "test-lock",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   2,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 2,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -994,10 +994,10 @@ func TestShardList(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "lock-1",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh,
 	})
@@ -1007,10 +1007,10 @@ func TestShardList(t *testing.T) {
 	sh.handleCreate(CreateReq{
 		LockID: "lock-2",
 		Config: LockConfig{
-			MaxTTL:     Duration(60 * time.Second),
-			DefaultTTL: Duration(10 * time.Second),
-			MaxQueue:   5,
-			QueueType:  QueueTypeFIFO,
+			MaxTTL:        Duration(60 * time.Second),
+			DefaultTTL:    Duration(10 * time.Second),
+			QueueCapacity: 5,
+			QueueType:     QueueTypeFIFO,
 		},
 		Reply: createCh2,
 	})
@@ -1047,10 +1047,10 @@ func TestShardCapacityEnforcement(t *testing.T) {
 	sh := newShard(0, cfg, clock)
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(60 * time.Second),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	t.Run("create up to capacity", func(t *testing.T) {
@@ -1172,10 +1172,10 @@ func TestShardFencingTokens(t *testing.T) {
 	sh := newShard(0, cfg, clock)
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(60 * time.Second),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	createCh := make(chan CreateResp, 1)

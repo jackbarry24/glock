@@ -163,12 +163,12 @@ class LockManager {
             owner: status.owner ? status.owner.client_id : null,
             acquired_at: status.owner ? status.owner.acquired_at : null,
             last_refresh: status.owner ? status.owner.acquired_at : null,
-            ttl: status.config.default_ttl,
+            ttl: status.config.default_lease_ttl,
             max_ttl: status.config.max_ttl,
             parent: '',
             queue_type: status.config.queue_type || 'none',
             queue_size: status.queue_len,
-            queue_timeout: 300000000000,
+            queue_timeout: status.config.queue_timeout || 0,
             token: status.owner ? status.owner.lease_id : null,
             fence_token: status.owner ? status.owner.fence_token : null,
             metadata: null,
@@ -452,14 +452,14 @@ class LockManager {
         const tagsInput = formData.get('tags');
 
         const config = {
-            default_ttl: formData.get('ttl'),
+            default_lease_ttl: formData.get('ttl'),
             max_ttl: formData.get('max_ttl'),
-            max_queue: maxQueue ? parseInt(maxQueue, 10) : (queueType === 'none' ? 0 : 100),
+            queue_capacity: maxQueue ? parseInt(maxQueue, 10) : (queueType === 'none' ? 0 : 100),
             queue_type: queueType
         };
 
         if (queueTimeout && queueTimeout.trim() !== '') {
-            config.default_timeout = queueTimeout;
+            config.queue_timeout = queueTimeout;
         }
 
         const lockData = {

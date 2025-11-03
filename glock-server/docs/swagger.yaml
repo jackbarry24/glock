@@ -1,6 +1,21 @@
 basePath: /api
 definitions:
   core.AcquireLeaseRequest:
+    properties:
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lease_ttl:
+        example: 30s
+        type: string
+      timeout:
+        example: 5m
+        type: string
+      wait:
+        example: true
+        type: boolean
+    required:
+    - client_id
     type: object
   core.AcquireResp:
     properties:
@@ -25,6 +40,22 @@ definitions:
         type: string
     type: object
   core.CreateLockRequest:
+    properties:
+      config:
+        $ref: '#/definitions/core.LockConfig'
+      lock_id:
+        example: my-resource-lock
+        type: string
+      tags:
+        example:
+        - production
+        - critical
+        items:
+          type: string
+        type: array
+    required:
+    - config
+    - lock_id
     type: object
   core.CreateResp:
     properties:
@@ -43,8 +74,6 @@ definitions:
       error: {}
       lock_id:
         type: string
-    type: object
-  core.Duration:
     type: object
   core.ErrorResp:
     properties:
@@ -76,6 +105,26 @@ definitions:
         type: array
     type: object
   core.LockConfig:
+    properties:
+      default_lease_ttl:
+        example: 30s
+        type: string
+      max_ttl:
+        example: 5m
+        type: string
+      queue_capacity:
+        example: 1024
+        type: integer
+      queue_timeout:
+        example: 5m
+        type: string
+      queue_type:
+        allOf:
+        - $ref: '#/definitions/core.QueueType'
+        example: fifo
+    required:
+    - default_lease_ttl
+    - max_ttl
     type: object
   core.LockMetrics:
     properties:
@@ -180,7 +229,30 @@ definitions:
           $ref: '#/definitions/core.WaitEntryView'
         type: array
     type: object
+  core.QueueType:
+    enum:
+    - none
+    - fifo
+    - lifo
+    type: string
+    x-enum-varnames:
+    - QueueTypeNone
+    - QueueTypeFIFO
+    - QueueTypeLIFO
   core.RefreshLeaseRequest:
+    properties:
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lease_id:
+        example: lease-123456
+        type: string
+      new_ttl:
+        example: 30s
+        type: string
+    required:
+    - client_id
+    - lease_id
     type: object
   core.RefreshResp:
     properties:

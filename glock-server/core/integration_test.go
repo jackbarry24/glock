@@ -11,12 +11,12 @@ import (
 
 func TestIntegrationBasicWorkflow(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -27,10 +27,10 @@ func TestIntegrationBasicWorkflow(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(5 * time.Second),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(5 * time.Second),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	_, err = srv.Create("workflow-lock", lockCfg, nil, "")
@@ -95,12 +95,12 @@ func TestIntegrationBasicWorkflow(t *testing.T) {
 
 func TestIntegrationExpiry(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          100 * time.Millisecond,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           100 * time.Millisecond,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -111,10 +111,10 @@ func TestIntegrationExpiry(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(100 * time.Millisecond),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(100 * time.Millisecond),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("expiry-lock", lockCfg, nil, "")
@@ -159,12 +159,12 @@ func TestIntegrationExpiry(t *testing.T) {
 
 func TestIntegrationQueueTimeout(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -175,10 +175,10 @@ func TestIntegrationQueueTimeout(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(30 * time.Second),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(30 * time.Second),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("timeout-lock", lockCfg, nil, "")
@@ -218,11 +218,11 @@ func TestIntegrationQueueTimeout(t *testing.T) {
 
 func TestIntegrationConcurrentAcquire(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     8,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  100,
+		NumShards:            8,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 100,
 	}
 
 	srv, err := NewServer(cfg)
@@ -233,10 +233,10 @@ func TestIntegrationConcurrentAcquire(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(1 * time.Second),
-		MaxQueue:   100,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(1 * time.Second),
+		QueueCapacity: 100,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("concurrent-lock", lockCfg, nil, "")
@@ -283,12 +283,12 @@ func TestIntegrationConcurrentAcquire(t *testing.T) {
 
 func TestIntegrationConcurrentReleaseAndAcquire(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -299,10 +299,10 @@ func TestIntegrationConcurrentReleaseAndAcquire(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(100 * time.Millisecond),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(100 * time.Millisecond),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("race-lock", lockCfg, nil, "")
@@ -341,12 +341,12 @@ func TestIntegrationConcurrentReleaseAndAcquire(t *testing.T) {
 
 func TestIntegrationMultipleLocks(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           8,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            8,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -357,10 +357,10 @@ func TestIntegrationMultipleLocks(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	const numLocks = 20
@@ -414,11 +414,11 @@ func TestIntegrationStressTest(t *testing.T) {
 	}
 
 	cfg := ServerConfig{
-		NumShards:     16,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  50,
+		NumShards:            16,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 50,
 	}
 
 	srv, err := NewServer(cfg)
@@ -429,10 +429,10 @@ func TestIntegrationStressTest(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(100 * time.Millisecond),
-		MaxQueue:   50,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(100 * time.Millisecond),
+		QueueCapacity: 50,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	const numLocks = 10
@@ -486,12 +486,12 @@ func TestIntegrationStressTest(t *testing.T) {
 
 func TestIntegrationQueuePromotion(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          150 * time.Millisecond,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           150 * time.Millisecond,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -502,10 +502,10 @@ func TestIntegrationQueuePromotion(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(150 * time.Millisecond),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(150 * time.Millisecond),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("promo-lock", lockCfg, nil, "")
@@ -547,12 +547,12 @@ func TestIntegrationQueuePromotion(t *testing.T) {
 
 func TestIntegrationLIFOQueuePromotion(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          150 * time.Millisecond,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           150 * time.Millisecond,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -563,10 +563,10 @@ func TestIntegrationLIFOQueuePromotion(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(150 * time.Millisecond),
-		MaxQueue:   10,
-		QueueType:  QueueTypeLIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(150 * time.Millisecond),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeLIFO,
 	}
 
 	srv.Create("lifo-lock", lockCfg, nil, "")
@@ -619,11 +619,11 @@ func TestIntegrationLIFOQueuePromotion(t *testing.T) {
 
 func TestIntegrationMetricsAccuracy(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     4,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  3,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 3,
 	}
 
 	srv, err := NewServer(cfg)
@@ -634,10 +634,10 @@ func TestIntegrationMetricsAccuracy(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   3,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("metrics-lock", lockCfg, nil, "")
@@ -714,12 +714,12 @@ func TestIntegrationMetricsAccuracy(t *testing.T) {
 
 func TestIntegrationFencingTokens(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -730,10 +730,10 @@ func TestIntegrationFencingTokens(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(5 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(5 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	_, err = srv.Create("fence-lock", lockCfg, nil, "")
@@ -853,12 +853,12 @@ func TestIntegrationFencingTokens(t *testing.T) {
 
 func TestIntegrationFencingTokensConcurrent(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        0,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 0,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -869,10 +869,10 @@ func TestIntegrationFencingTokensConcurrent(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(100 * time.Millisecond),
-		MaxQueue:   0,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(100 * time.Millisecond),
+		QueueCapacity: 0,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	numLocks := 10
@@ -951,12 +951,12 @@ func TestIntegrationFencingTokensConcurrent(t *testing.T) {
 
 func TestIntegrationFencingTokensExpiry(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          100 * time.Millisecond,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           100 * time.Millisecond,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -967,10 +967,10 @@ func TestIntegrationFencingTokensExpiry(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(100 * time.Millisecond),
-		MaxQueue:   5,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(100 * time.Millisecond),
+		QueueCapacity: 5,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("expiry-fence-lock", lockCfg, nil, "")
@@ -1021,12 +1021,12 @@ func TestIntegrationFencingTokensExpiry(t *testing.T) {
 
 func TestIntegrationFencingTokensMonotonicity(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        0,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 0,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -1037,10 +1037,10 @@ func TestIntegrationFencingTokensMonotonicity(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(5 * time.Second),
-		MaxQueue:   0,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(5 * time.Second),
+		QueueCapacity: 0,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	_, err = srv.Create("monotonic-lock", lockCfg, nil, "")

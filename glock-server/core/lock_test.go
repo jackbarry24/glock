@@ -7,11 +7,11 @@ import (
 
 func makeLockForTest(t *testing.T, id string, clock Clock) *Lock {
 	cfg := LockConfig{
-		MaxTTL:         Duration(60 * time.Second),
-		DefaultTTL:     Duration(10 * time.Second),
-		MaxQueue:       3,
-		QueueType:      QueueTypeFIFO,
-		DefaultTimeout: Duration(30 * time.Second),
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
 	}
 	return newLock(id, cfg, nil, clock)
 }
@@ -239,5 +239,221 @@ func TestLockIdempotentAcquire(t *testing.T) {
 	r2 := <-r2ch
 	if r2.LeaseID != r1.LeaseID || r2.FenceToken != r1.FenceToken || r2.State != r1.State {
 		t.Fatalf("idempotent mismatch: r1=%+v r2=%+v", r1, r2)
+	}
+}
+
+func TestMaxTTLAbsoluteLifetimeCap(t *testing.T) {
+	clock := NewFakeClock(time.Now())
+	cfg := LockConfig{
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
+	}
+	l := newLock("lock-maxttl", cfg, nil, clock)
+
+	acquiredAt := clock.Now()
+
+	// Acquire lock
+	areply := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-maxttl", ClientID: "c1", LeaseTTL: Duration(20 * time.Second), Reply: areply})
+	a := <-areply
+	if a.State != "granted" {
+		t.Fatalf("acquire state=%s want granted", a.State)
+	}
+	expectedExpiry := acquiredAt.Add(20 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("initial expiry=%v want %v", l.owner.ExpiresAt, expectedExpiry)
+	}
+
+	// Refresh 1: should extend, but not beyond absolute cap
+	clock.Advance(10 * time.Second)
+	rreply1 := make(chan RefreshResp, 1)
+	l.handleRefresh(RefreshReq{LockID: "lock-maxttl", ClientID: "c1", LeaseID: a.LeaseID, NewTTL: Duration(50 * time.Second), Reply: rreply1})
+	r1 := <-rreply1
+	if r1.Err != nil {
+		t.Fatalf("refresh err: %v", r1.Err)
+	}
+	// Should be capped at acquiredAt + MaxTTL (60s), not now + 50s
+	expectedCap := acquiredAt.Add(60 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedCap) {
+		t.Fatalf("refresh1 expiry=%v want %v (absolute cap)", l.owner.ExpiresAt, expectedCap)
+	}
+
+	// Refresh 2: already at cap, should stay at cap
+	clock.Advance(5 * time.Second)
+	rreply2 := make(chan RefreshResp, 1)
+	l.handleRefresh(RefreshReq{LockID: "lock-maxttl", ClientID: "c1", LeaseID: a.LeaseID, NewTTL: Duration(30 * time.Second), Reply: rreply2})
+	r2 := <-rreply2
+	if r2.Err != nil {
+		t.Fatalf("refresh2 err: %v", r2.Err)
+	}
+	// Should still be at absolute cap
+	if !l.owner.ExpiresAt.Equal(expectedCap) {
+		t.Fatalf("refresh2 expiry=%v want %v (still at cap)", l.owner.ExpiresAt, expectedCap)
+	}
+
+	// Advance past absolute cap and tick - lock should expire
+	clock.Advance(50 * time.Second)
+	l.processTick()
+	if l.owner != nil {
+		t.Fatalf("lock should expire after absolute MaxTTL, owner=%+v", l.owner)
+	}
+}
+
+func TestMaxTTLZeroInfinite(t *testing.T) {
+	clock := NewFakeClock(time.Now())
+	cfg := LockConfig{
+		MaxTTL:        Duration(0),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
+	}
+	l := newLock("lock-infinite", cfg, nil, clock)
+
+	// Acquire lock
+	areply := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-infinite", ClientID: "c1", LeaseTTL: Duration(20 * time.Second), Reply: areply})
+	a := <-areply
+	if a.State != "granted" {
+		t.Fatalf("acquire state=%s want granted", a.State)
+	}
+
+	// Refresh with large TTL - should not be capped
+	clock.Advance(10 * time.Second)
+	rreply1 := make(chan RefreshResp, 1)
+	l.handleRefresh(RefreshReq{LockID: "lock-infinite", ClientID: "c1", LeaseID: a.LeaseID, NewTTL: Duration(100 * time.Second), Reply: rreply1})
+	r1 := <-rreply1
+	if r1.Err != nil {
+		t.Fatalf("refresh err: %v", r1.Err)
+	}
+	// With MaxTTL=0, should allow large TTL
+	expectedExpiry := clock.Now().Add(100 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("refresh expiry=%v want %v (no cap with MaxTTL=0)", l.owner.ExpiresAt, expectedExpiry)
+	}
+
+	// Another refresh - should still work without absolute cap
+	clock.Advance(50 * time.Second)
+	rreply2 := make(chan RefreshResp, 1)
+	l.handleRefresh(RefreshReq{LockID: "lock-infinite", ClientID: "c1", LeaseID: a.LeaseID, NewTTL: Duration(200 * time.Second), Reply: rreply2})
+	r2 := <-rreply2
+	if r2.Err != nil {
+		t.Fatalf("refresh2 err: %v", r2.Err)
+	}
+	// Should allow unlimited refresh
+	expectedExpiry2 := clock.Now().Add(200 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedExpiry2) {
+		t.Fatalf("refresh2 expiry=%v want %v (unlimited with MaxTTL=0)", l.owner.ExpiresAt, expectedExpiry2)
+	}
+}
+
+func TestMaxTTLAcquireInitialCap(t *testing.T) {
+	clock := NewFakeClock(time.Now())
+	cfg := LockConfig{
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
+	}
+	l := newLock("lock-acq-cap", cfg, nil, clock)
+
+	acquiredAt := clock.Now()
+
+	// Acquire with TTL > MaxTTL - should be capped at now + MaxTTL
+	areply := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-acq-cap", ClientID: "c1", LeaseTTL: Duration(120 * time.Second), Reply: areply})
+	a := <-areply
+	if a.State != "granted" {
+		t.Fatalf("acquire state=%s want granted", a.State)
+	}
+	// Should be capped at acquiredAt + MaxTTL (60s), not 120s
+	expectedExpiry := acquiredAt.Add(60 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("acquire expiry=%v want %v (capped at MaxTTL)", l.owner.ExpiresAt, expectedExpiry)
+	}
+}
+
+func TestMaxTTLPromoteRespectsMaxTTL(t *testing.T) {
+	clock := NewFakeClock(time.Now())
+	cfg := LockConfig{
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(30 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
+	}
+	l := newLock("lock-promote", cfg, nil, clock)
+
+	// Acquire lock
+	areply := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-promote", ClientID: "c1", LeaseTTL: Duration(20 * time.Second), Reply: areply})
+	a := <-areply
+
+	// Queue a waiter
+	areply2 := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-promote", ClientID: "c2", Wait: true, Timeout: Duration(1 * time.Minute), Reply: areply2})
+	<-areply2
+
+	// Release lock - should promote from queue
+	rreply := make(chan ReleaseResp, 1)
+	l.handleRelease(ReleaseReq{LockID: "lock-promote", ClientID: "c1", LeaseID: a.LeaseID, Reply: rreply})
+	<-rreply
+
+	// Promoted lock should use DefaultTTL (30s), capped at MaxTTL (60s) if needed
+	now := clock.Now()
+	expectedExpiry := now.Add(30 * time.Second)
+	if l.owner == nil || l.owner.ClientID != "c2" {
+		t.Fatalf("owner after promote=%+v want c2", l.owner)
+	}
+	// DefaultTTL is 30s, which is less than MaxTTL (60s), so should use DefaultTTL
+	if !l.owner.ExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("promoted expiry=%v want %v (DefaultTTL)", l.owner.ExpiresAt, expectedExpiry)
+	}
+}
+
+func TestMaxTTLRefreshExceedsAbsoluteCap(t *testing.T) {
+	clock := NewFakeClock(time.Now())
+	cfg := LockConfig{
+		MaxTTL:        Duration(60 * time.Second),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 3,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(30 * time.Second),
+	}
+	l := newLock("lock-cap-exceed", cfg, nil, clock)
+
+	acquiredAt := clock.Now()
+
+	// Acquire lock
+	areply := make(chan AcquireResp, 1)
+	l.handleAcquire(AcquireReq{LockID: "lock-cap-exceed", ClientID: "c1", LeaseTTL: Duration(20 * time.Second), Reply: areply})
+	a := <-areply
+
+	// Advance time so we're close to the absolute cap
+	clock.Advance(50 * time.Second)
+
+	// Try to refresh with large TTL - should be capped at absolute limit
+	rreply := make(chan RefreshResp, 1)
+	l.handleRefresh(RefreshReq{LockID: "lock-cap-exceed", ClientID: "c1", LeaseID: a.LeaseID, NewTTL: Duration(100 * time.Second), Reply: rreply})
+	r := <-rreply
+	if r.Err != nil {
+		t.Fatalf("refresh err: %v", r.Err)
+	}
+	// Should be capped at acquiredAt + MaxTTL, not now + 100s
+	expectedCap := acquiredAt.Add(60 * time.Second)
+	if !l.owner.ExpiresAt.Equal(expectedCap) {
+		t.Fatalf("refresh expiry=%v want %v (absolute cap)", l.owner.ExpiresAt, expectedCap)
+	}
+
+	// Advance past the absolute cap
+	clock.Advance(15 * time.Second)
+	l.processTick()
+	// Lock should expire
+	if l.owner != nil {
+		t.Fatalf("lock should expire after absolute MaxTTL, owner=%+v", l.owner)
 	}
 }

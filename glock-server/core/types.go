@@ -46,24 +46,21 @@ func (d Duration) Duration() time.Duration {
 }
 
 type LockConfig struct {
-	MaxTTL         Duration  `json:"max_ttl" binding:"required"`
-	DefaultTTL     Duration  `json:"default_ttl" binding:"required"`
-	MaxQueue       int       `json:"max_queue"`
-	QueueType      QueueType `json:"queue_type"`
-	DefaultTimeout Duration  `json:"default_timeout" example:"5m"`
+	MaxTTL        Duration  `json:"max_ttl" binding:"required" swaggertype:"string" example:"5m"`
+	DefaultTTL    Duration  `json:"default_lease_ttl" binding:"required" swaggertype:"string" example:"30s"`
+	QueueCapacity int       `json:"queue_capacity" example:"1024"`
+	QueueType     QueueType `json:"queue_type" example:"fifo"`
+	QueueTimeout  Duration  `json:"queue_timeout" swaggertype:"string" example:"5m"`
 }
 
 type ServerConfig struct {
-	NumShards           int
-	ExpiryTick          time.Duration
-	Capacity            int
-	DefaultMaxTTL       time.Duration
-	DefaultTTL          time.Duration
-	DefaultQueue        int
-	DefaultQueueTimeout time.Duration
-	// Optional fields used by tests/benchmarks; ignored by core logic
-	LockPoolSize    int
-	LockPoolMinSize int
+	NumShards            int
+	ExpiryTick           time.Duration
+	Capacity             int
+	DefaultMaxTTL        time.Duration
+	DefaultTTL           time.Duration
+	DefaultQueueCapacity int
+	DefaultQueueTimeout  time.Duration
 }
 
 type Lease struct {
@@ -122,8 +119,6 @@ type idemEntry struct {
 	response  interface{}
 	expiresAt time.Time
 }
-
-// queueEntry and lockState moved to lock.go as part of the Lock actor
 
 type LockMetrics struct {
 	TotalAcquires     int64

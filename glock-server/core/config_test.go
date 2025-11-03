@@ -79,12 +79,12 @@ func TestConfigValidate(t *testing.T) {
 		},
 		{
 			name:    "invalid queue max size - zero",
-			modify:  func(c *Config) { c.QueueMaxSize = 0 },
+			modify:  func(c *Config) { c.DefaultQueueCapacity = 0 },
 			wantErr: true,
 		},
 		{
 			name:    "invalid queue max size - exceeds max",
-			modify:  func(c *Config) { c.QueueMaxSize = 1048577 },
+			modify:  func(c *Config) { c.DefaultQueueCapacity = 1048577 },
 			wantErr: true,
 		},
 	}
@@ -163,13 +163,13 @@ func TestConfigLoadFromEnv(t *testing.T) {
 			},
 		},
 		{
-			name: "load queue max size",
+			name: "load default queue capacity",
 			envVars: map[string]string{
-				"GLOCK_QUEUE_MAX_SIZE": "2048",
+				"GLOCK_DEFAULT_QUEUE_CAPACITY": "2048",
 			},
 			validate: func(t *testing.T, c *Config) {
-				if c.QueueMaxSize != 2048 {
-					t.Errorf("QueueMaxSize = %d, want 2048", c.QueueMaxSize)
+				if c.DefaultQueueCapacity != 2048 {
+					t.Errorf("DefaultQueueCapacity = %d, want 2048", c.DefaultQueueCapacity)
 				}
 			},
 		},
@@ -229,7 +229,7 @@ func TestConfigLoadFromYAML(t *testing.T) {
 port: 9000
 host: "127.0.0.1"
 capacity: 5000
-queue_max_size: 2048
+default_queue_capacity: 2048
 default_ttl: 45s
 default_max_ttl: 10m
 default_queue_timeout: 10m
@@ -245,8 +245,8 @@ default_queue_timeout: 10m
 				if c.Capacity != 5000 {
 					t.Errorf("Capacity = %d, want 5000", c.Capacity)
 				}
-				if c.QueueMaxSize != 2048 {
-					t.Errorf("QueueMaxSize = %d, want 2048", c.QueueMaxSize)
+				if c.DefaultQueueCapacity != 2048 {
+					t.Errorf("DefaultQueueCapacity = %d, want 2048", c.DefaultQueueCapacity)
 				}
 				if c.DefaultQueueTimeout != 10*time.Minute {
 					t.Errorf("DefaultQueueTimeout = %v, want 10m", c.DefaultQueueTimeout)
@@ -317,7 +317,7 @@ func TestLoadConfig(t *testing.T) {
 		yaml := `
 port: 9000
 capacity: 5000
-queue_max_size: 2048
+default_queue_capacity: 2048
 default_queue_timeout: 10m
 `
 		if err := os.WriteFile(filename, []byte(yaml), 0644); err != nil {
@@ -340,8 +340,8 @@ default_queue_timeout: 10m
 			t.Errorf("YAML value should be used: Capacity = %d, want 5000", cfg.Capacity)
 		}
 
-		if cfg.QueueMaxSize != 2048 {
-			t.Errorf("YAML value should be used: QueueMaxSize = %d, want 2048", cfg.QueueMaxSize)
+		if cfg.DefaultQueueCapacity != 2048 {
+			t.Errorf("YAML value should be used: QueueMaxSize = %d, want 2048", cfg.DefaultQueueCapacity)
 		}
 
 		if cfg.DefaultQueueTimeout != 10*time.Minute {

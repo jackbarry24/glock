@@ -12,10 +12,10 @@ const (
 
 type LockConfig struct {
 	MaxTTL         string    `json:"max_ttl"`
-	DefaultTTL     string    `json:"default_ttl"`
-	MaxQueue       int       `json:"max_queue"`
+	DefaultTTL     string    `json:"default_lease_ttl"`
+	MaxQueue       int       `json:"queue_capacity"`
 	QueueType      QueueType `json:"queue_type"`
-	DefaultTimeout string    `json:"default_timeout,omitempty"`
+	DefaultTimeout string    `json:"queue_timeout,omitempty"`
 }
 
 type CreateLockRequest struct {

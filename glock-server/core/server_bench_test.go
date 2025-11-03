@@ -13,11 +13,11 @@ import (
 // benchDefaultLockConfig builds a LockConfig from the server's defaults.
 func benchDefaultLockConfig(srv *Server) LockConfig {
 	return LockConfig{
-		MaxTTL:         Duration(srv.cfg.DefaultMaxTTL),
-		DefaultTTL:     Duration(srv.cfg.DefaultTTL),
-		MaxQueue:       srv.cfg.DefaultQueue,
-		QueueType:      QueueTypeFIFO,
-		DefaultTimeout: Duration(srv.cfg.DefaultQueueTimeout),
+		MaxTTL:        Duration(srv.cfg.DefaultMaxTTL),
+		DefaultTTL:    Duration(srv.cfg.DefaultTTL),
+		QueueCapacity: srv.cfg.DefaultQueueCapacity,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(srv.cfg.DefaultQueueTimeout),
 	}
 }
 
@@ -32,15 +32,13 @@ func ensureLockCreated(b *testing.B, srv *Server, lockID string) {
 // setupBenchServer creates and starts a server with optimized config for benchmarking
 func setupBenchServer(b *testing.B) *Server {
 	cfg := ServerConfig{
-		NumShards:           16,
-		ExpiryTick:          100 * time.Millisecond,
-		Capacity:            0,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        100,
-		DefaultQueueTimeout: 5 * time.Minute,
-		LockPoolSize:        200,
-		LockPoolMinSize:     100,
+		NumShards:            16,
+		ExpiryTick:           100 * time.Millisecond,
+		Capacity:             0,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 100,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -367,11 +365,11 @@ func BenchmarkCreate(b *testing.B) {
 	srv := setupBenchServer(b)
 
 	lockCfg := LockConfig{
-		MaxTTL:         Duration(5 * time.Minute),
-		DefaultTTL:     Duration(30 * time.Second),
-		MaxQueue:       10,
-		QueueType:      QueueTypeFIFO,
-		DefaultTimeout: Duration(5 * time.Minute),
+		MaxTTL:        Duration(5 * time.Minute),
+		DefaultTTL:    Duration(30 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
+		QueueTimeout:  Duration(5 * time.Minute),
 	}
 
 	b.ReportAllocs()

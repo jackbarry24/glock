@@ -402,15 +402,15 @@ type CreateLockRequest struct {
 
 type AcquireLeaseRequest struct {
 	ClientID string   `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
-	LeaseTTL Duration `json:"lease_ttl,omitempty" example:"30s"`
+	LeaseTTL Duration `json:"lease_ttl,omitempty" swaggertype:"string" example:"30s"`
 	Wait     bool     `json:"wait" example:"true"`
-	Timeout  Duration `json:"timeout,omitempty" example:"5m"`
+	Timeout  Duration `json:"timeout,omitempty" swaggertype:"string" example:"5m"`
 }
 
 type RefreshLeaseRequest struct {
 	ClientID string   `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
 	LeaseID  string   `json:"lease_id" binding:"required" example:"lease-123456"`
-	NewTTL   Duration `json:"new_ttl,omitempty" example:"30s"`
+	NewTTL   Duration `json:"new_ttl,omitempty" swaggertype:"string" example:"30s"`
 }
 
 type ReleaseLeaseRequest struct {

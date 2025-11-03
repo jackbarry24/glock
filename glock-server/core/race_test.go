@@ -11,11 +11,11 @@ import (
 
 func TestRaceConcurrentAcquireSameLock(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     4,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  100,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 100,
 	}
 
 	srv, err := NewServer(cfg)
@@ -26,10 +26,10 @@ func TestRaceConcurrentAcquireSameLock(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   100,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 100,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("race-lock", lockCfg, nil, "")
@@ -70,12 +70,12 @@ func TestRaceConcurrentAcquireSameLock(t *testing.T) {
 
 func TestRaceConcurrentRefreshAndRelease(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -86,10 +86,10 @@ func TestRaceConcurrentRefreshAndRelease(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("refresh-release-lock", lockCfg, nil, "")
@@ -150,12 +150,12 @@ func TestRaceConcurrentRefreshAndRelease(t *testing.T) {
 
 func TestRaceConcurrentCreateSameLock(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -166,10 +166,10 @@ func TestRaceConcurrentCreateSameLock(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	const numGoroutines = 100
@@ -205,12 +205,12 @@ func TestRaceConcurrentCreateSameLock(t *testing.T) {
 
 func TestRaceConcurrentDeleteAndAcquire(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -221,10 +221,10 @@ func TestRaceConcurrentDeleteAndAcquire(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	for iter := 0; iter < 10; iter++ {
@@ -258,12 +258,12 @@ func TestRaceConcurrentDeleteAndAcquire(t *testing.T) {
 
 func TestRaceConcurrentStatusChecks(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -274,10 +274,10 @@ func TestRaceConcurrentStatusChecks(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("status-lock", lockCfg, nil, "")
@@ -317,11 +317,11 @@ func TestRaceConcurrentStatusChecks(t *testing.T) {
 
 func TestRaceConcurrentQueueOperations(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     4,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  50,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 50,
 	}
 
 	srv, err := NewServer(cfg)
@@ -332,10 +332,10 @@ func TestRaceConcurrentQueueOperations(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   50,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 50,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("queue-race-lock", lockCfg, nil, "")
@@ -382,12 +382,12 @@ func TestRaceConcurrentQueueOperations(t *testing.T) {
 
 func TestRaceExpiryWithRefresh(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          5 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          50 * time.Millisecond,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           5 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           50 * time.Millisecond,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -398,10 +398,10 @@ func TestRaceExpiryWithRefresh(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(50 * time.Millisecond),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(50 * time.Millisecond),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("expiry-race-lock", lockCfg, nil, "")
@@ -441,11 +441,11 @@ func TestRaceExpiryWithRefresh(t *testing.T) {
 
 func TestRaceConcurrentReleaseQueuePromotion(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     4,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  20,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 20,
 	}
 
 	srv, err := NewServer(cfg)
@@ -456,10 +456,10 @@ func TestRaceConcurrentReleaseQueuePromotion(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   20,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 20,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("promotion-race-lock", lockCfg, nil, "")
@@ -518,12 +518,12 @@ func TestRaceConcurrentReleaseQueuePromotion(t *testing.T) {
 
 func TestRaceMultipleShardsConcurrent(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           16,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            16,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -534,10 +534,10 @@ func TestRaceMultipleShardsConcurrent(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	const numLocks = 100
@@ -589,11 +589,11 @@ func TestRaceMultipleShardsConcurrent(t *testing.T) {
 
 func TestRaceMetricsConsistency(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:     4,
-		ExpiryTick:    10 * time.Millisecond,
-		DefaultMaxTTL: 5 * time.Minute,
-		DefaultTTL:    30 * time.Second,
-		DefaultQueue:  50,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 50,
 	}
 
 	srv, err := NewServer(cfg)
@@ -604,10 +604,10 @@ func TestRaceMetricsConsistency(t *testing.T) {
 	defer srv.Stop(context.Background())
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   50,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 50,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("metrics-race-lock", lockCfg, nil, "")
@@ -655,12 +655,12 @@ func TestRaceMetricsConsistency(t *testing.T) {
 
 func TestRaceServerStopDuringOperations(t *testing.T) {
 	cfg := ServerConfig{
-		NumShards:           4,
-		ExpiryTick:          10 * time.Millisecond,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultTTL:          30 * time.Second,
-		DefaultQueue:        10,
-		DefaultQueueTimeout: 5 * time.Minute,
+		NumShards:            4,
+		ExpiryTick:           10 * time.Millisecond,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultTTL:           30 * time.Second,
+		DefaultQueueCapacity: 10,
+		DefaultQueueTimeout:  5 * time.Minute,
 	}
 
 	srv, err := NewServer(cfg)
@@ -670,10 +670,10 @@ func TestRaceServerStopDuringOperations(t *testing.T) {
 	srv.Start()
 
 	lockCfg := LockConfig{
-		MaxTTL:     Duration(1 * time.Minute),
-		DefaultTTL: Duration(10 * time.Second),
-		MaxQueue:   10,
-		QueueType:  QueueTypeFIFO,
+		MaxTTL:        Duration(1 * time.Minute),
+		DefaultTTL:    Duration(10 * time.Second),
+		QueueCapacity: 10,
+		QueueType:     QueueTypeFIFO,
 	}
 
 	srv.Create("stop-race-lock", lockCfg, nil, "")
