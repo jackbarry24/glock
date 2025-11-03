@@ -284,6 +284,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.ErrorResp"
                         }
                     },
+                    "404": {
+                        "description": "Lock not found",
+                        "schema": {
+                            "$ref": "#/definitions/core.AcquireResp"
+                        }
+                    },
                     "409": {
                         "description": "Lock is busy",
                         "schema": {
@@ -514,6 +520,9 @@ const docTemplate = `{
                 "expires_at": {
                     "type": "string"
                 },
+                "fence_token": {
+                    "type": "integer"
+                },
                 "lease_id": {
                     "type": "string"
                 },
@@ -587,6 +596,9 @@ const docTemplate = `{
                 "expires_at": {
                     "type": "string"
                 },
+                "fence_token": {
+                    "type": "integer"
+                },
                 "lease_id": {
                     "type": "string"
                 }
@@ -614,8 +626,23 @@ const docTemplate = `{
         "core.LockMetrics": {
             "type": "object",
             "properties": {
+                "avgHoldTimeNs": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "avgQueueTimeNs": {
+                    "type": "integer",
+                    "format": "int64"
+                },
                 "createdAt": {
                     "type": "string"
+                },
+                "currentHoldTimeNs": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "currentQueueLen": {
+                    "type": "integer"
                 },
                 "failedAcquires": {
                     "type": "integer",
@@ -623,6 +650,14 @@ const docTemplate = `{
                 },
                 "lastActivityAt": {
                     "type": "string"
+                },
+                "maxHoldTimeNs": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "maxTTLExpirations": {
+                    "type": "integer",
+                    "format": "int64"
                 },
                 "ownerChanges": {
                     "type": "integer",
@@ -640,6 +675,10 @@ const docTemplate = `{
                     "type": "integer",
                     "format": "int64"
                 },
+                "totalHoldTimeNs": {
+                    "type": "integer",
+                    "format": "int64"
+                },
                 "totalQueued": {
                     "type": "integer",
                     "format": "int64"
@@ -651,6 +690,13 @@ const docTemplate = `{
                 "totalReleases": {
                     "type": "integer",
                     "format": "int64"
+                },
+                "ttlexpirations": {
+                    "type": "integer",
+                    "format": "int64"
+                },
+                "uniqueOwners": {
+                    "type": "integer"
                 }
             }
         },
@@ -734,6 +780,9 @@ const docTemplate = `{
                 "error": {},
                 "expires_at": {
                     "type": "string"
+                },
+                "fence_token": {
+                    "type": "integer"
                 },
                 "lease_id": {
                     "type": "string"

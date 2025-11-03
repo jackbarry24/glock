@@ -9,6 +9,8 @@ definitions:
         type: integer
       expires_at:
         type: string
+      fence_token:
+        type: integer
       lease_id:
         type: string
       lock_id:
@@ -57,6 +59,8 @@ definitions:
         type: string
       expires_at:
         type: string
+      fence_token:
+        type: integer
       lease_id:
         type: string
     type: object
@@ -75,13 +79,30 @@ definitions:
     type: object
   core.LockMetrics:
     properties:
+      avgHoldTimeNs:
+        format: int64
+        type: integer
+      avgQueueTimeNs:
+        format: int64
+        type: integer
       createdAt:
         type: string
+      currentHoldTimeNs:
+        format: int64
+        type: integer
+      currentQueueLen:
+        type: integer
       failedAcquires:
         format: int64
         type: integer
       lastActivityAt:
         type: string
+      maxHoldTimeNs:
+        format: int64
+        type: integer
+      maxTTLExpirations:
+        format: int64
+        type: integer
       ownerChanges:
         format: int64
         type: integer
@@ -94,6 +115,9 @@ definitions:
       totalAcquires:
         format: int64
         type: integer
+      totalHoldTimeNs:
+        format: int64
+        type: integer
       totalQueued:
         format: int64
         type: integer
@@ -102,6 +126,11 @@ definitions:
         type: integer
       totalReleases:
         format: int64
+        type: integer
+      ttlexpirations:
+        format: int64
+        type: integer
+      uniqueOwners:
         type: integer
     type: object
   core.LockStatus:
@@ -158,6 +187,8 @@ definitions:
       error: {}
       expires_at:
         type: string
+      fence_token:
+        type: integer
       lease_id:
         type: string
       lock_id:
@@ -391,6 +422,10 @@ paths:
           description: Invalid request
           schema:
             $ref: '#/definitions/core.ErrorResp'
+        "404":
+          description: Lock not found
+          schema:
+            $ref: '#/definitions/core.AcquireResp'
         "409":
           description: Lock is busy
           schema:
