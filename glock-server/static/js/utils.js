@@ -33,19 +33,13 @@ function formatDuration(seconds) {
 // Format time remaining with color coding
 function formatTimeRemaining(lock) {
     // If lock is frozen or available, show "-" instead of time
-    if (lock.frozen || !lock.owner_id) {
+    if (lock.frozen || !lock.owner_id || !lock.expires_at) {
         return '<span class="time-normal">-</span>';
     }
 
     const now = new Date();
-    const acquiredAt = new Date(lock.acquired_at);
-    const lastRefresh = new Date(lock.last_refresh);
-    const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
-    const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
-
-    // Use the earliest expiry time
-    const expiryTime = ttlExpiry < maxTTLExpiry ? ttlExpiry : maxTTLExpiry;
-    const secondsRemaining = Math.floor((expiryTime - now) / 1000);
+    const expiresAt = new Date(lock.expires_at);
+    const secondsRemaining = Math.floor((expiresAt - now) / 1000);
 
     if (secondsRemaining <= 0) {
         return '<span class="time-expired">Expired</span>';
@@ -73,20 +67,20 @@ function formatStatus(lock, ancestorInfo = { isBlocked: false }) {
     } else if (!lock.owner_id) {
         statusText = 'Available';
         statusClass = 'status-available';
-    } else {
+    } else if (lock.expires_at) {
         const now = new Date();
-        const acquiredAt = new Date(lock.acquired_at);
-        const lastRefresh = new Date(lock.last_refresh);
-        const maxTTLExpiry = new Date(acquiredAt.getTime() + lock.max_ttl / 1000000);
-        const ttlExpiry = new Date(lastRefresh.getTime() + lock.ttl / 1000000);
+        const expiresAt = new Date(lock.expires_at);
 
-        if (now > maxTTLExpiry || now > ttlExpiry) {
+        if (now > expiresAt) {
             statusText = 'Expired';
             statusClass = 'status-expired';
         } else {
             statusText = 'Held';
             statusClass = 'status-held';
         }
+    } else {
+        statusText = 'Held';
+        statusClass = 'status-held';
     }
 
     const titleAttr = tooltip ? ` title="${tooltip}"` : '';
@@ -155,19 +149,9 @@ function generateActionButtons(lock, ancestorInfo = { isBlocked: false }) {
         actions.push(`<button class="btn btn-success btn-sm action-btn acquire-btn" data-lock-name="${lock.name}">Acquire</button>`);
     }
 
-    // Update button (always available for existing locks)
-    actions.push(`<button class="btn btn-primary btn-sm action-btn update-btn" data-lock-name="${lock.name}">Update</button>`);
-
     // Release button (only if currently held)
     if (lock.owner_id) {
         actions.push(`<button class="btn btn-warning btn-sm action-btn release-btn" data-lock-name="${lock.name}">Release</button>`);
-    }
-
-    // Freeze/Unfreeze buttons
-    if (lock.frozen) {
-        actions.push(`<button class="btn btn-info btn-sm action-btn unfreeze-btn" data-lock-name="${lock.name}">Unfreeze</button>`);
-    } else {
-        actions.push(`<button class="btn btn-secondary btn-sm action-btn freeze-btn" data-lock-name="${lock.name}">Freeze</button>`);
     }
 
     // Delete button (only if not currently held and not blocked)

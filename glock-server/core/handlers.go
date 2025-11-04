@@ -1,649 +1,427 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// CreateHandler handles the /create route.
-// @Summary Create a new lock
-// @Description Create a new distributed lock with optional queue configuration
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param request body CreateRequest true "Lock creation parameters"
-// @Success 200 {object} CreateResponse
-// @Failure 400 {object} map[string]string
-// @Failure 409 {object} map[string]string
-// @Router /create [post]
-func CreateHandler(c *gin.Context, g *GlockServer) {
-	var req CreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	ttlDuration, err := time.ParseDuration(req.TTL)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid ttl format: %v", err)})
-		return
-	}
-	if ttlDuration <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ttl must be greater than zero"})
-		return
-	}
-
-	maxTTLDuration, err := time.ParseDuration(req.MaxTTL)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid max_ttl format: %v", err)})
-		return
-	}
-	if maxTTLDuration <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "max_ttl must be greater than zero"})
-		return
-	}
-
-	if maxTTLDuration < ttlDuration {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "max_ttl must be greater than or equal to ttl"})
-		return
-	}
-
-	var queueTimeoutDuration time.Duration
-	if req.QueueTimeout != "" {
-		queueTimeoutDuration, err = time.ParseDuration(req.QueueTimeout)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid queue_timeout format: %v", err)})
-			return
-		}
-		if queueTimeoutDuration <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_timeout must be greater than zero"})
-			return
-		}
-	}
-
-	if req.QueueType != "" {
-		switch req.QueueType {
-		case QueueNone, QueueFIFO, QueueLIFO:
-		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
-			return
-		}
-	}
-
-	lock, code, err := g.CreateLock(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"lock": lock})
-}
-
-// UpdateHandler handles the /update route.
-// @Summary Update lock configuration
-// @Description Update an existing lock's TTL, MaxTTL, and queue configuration
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param request body UpdateRequest true "Lock update parameters"
-// @Success 200 {object} UpdateResponse
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /update [post]
-func UpdateHandler(c *gin.Context, g *GlockServer) {
-	var req UpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if req.TTL != "" {
-		_, err := time.ParseDuration(req.TTL)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid ttl format: %v", err)})
-			return
-		}
-	}
-
-	if req.MaxTTL != "" {
-		_, err := time.ParseDuration(req.MaxTTL)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid max_ttl format: %v", err)})
-			return
-		}
-	}
-
-	if req.QueueTimeout != "" {
-		_, err := time.ParseDuration(req.QueueTimeout)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid queue_timeout format: %v", err)})
-			return
-		}
-	}
-
-	if req.QueueType != "" {
-		switch req.QueueType {
-		case QueueNone, QueueFIFO, QueueLIFO:
-		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "queue_type must be one of: none, fifo, lifo"})
-			return
-		}
-	}
-
-	lock, code, err := g.UpdateLock(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"lock": lock})
-}
-
-// DeleteHandler handles the /delete/:name route.
-// @Summary Delete a lock
-// @Description Delete an existing lock by name
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param name path string true "Lock name"
-// @Success 200 {object} map[string]bool
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /delete/{name} [delete]
-func DeleteHandler(c *gin.Context, g *GlockServer) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	success, code, err := g.DeleteLock(name)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"success": success})
-}
-
-// AcquireHandler handles the /acquire route.
-// @Summary Acquire a lock
-// @Description Attempt to acquire a lock, either immediately or queue the request
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param request body AcquireRequest true "Lock acquisition parameters"
-// @Success 200 {object} AcquireResponse
-// @Success 202 {object} QueueResponse
-// @Failure 400 {object} map[string]string
-// @Failure 409 {object} map[string]string
-// @Router /acquire [post]
-func AcquireHandler(c *gin.Context, g *GlockServer) {
-	var req AcquireRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if !IsValidOwner(req.OwnerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
-		return
-	}
-
-	result, code, err := g.AcquireLock(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-
-	switch response := result.(type) {
-	case *Lock:
-		c.JSON(code, gin.H{"lock": response})
-	case *QueueResponse:
-		c.JSON(code, gin.H{"queue": response})
+func mapErrorToStatus(err error) int {
+	switch {
+	case errors.Is(err, ErrLockNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, ErrLockExists):
+		return http.StatusConflict
+	case errors.Is(err, ErrLockBusy):
+		return http.StatusConflict
+	case errors.Is(err, ErrQueueFull):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrCapacityReached):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrNotOwner):
+		return http.StatusForbidden
+	case errors.Is(err, ErrInvalidLease):
+		return http.StatusBadRequest
+	case errors.Is(err, ErrWaitNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, ErrNotImplemented):
+		return http.StatusNotImplemented
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected response type"})
+		return http.StatusInternalServerError
 	}
 }
 
-// RefreshHandler handles the /refresh route.
-// @Summary Refresh a lock
-// @Description Extend the TTL of an acquired lock
+// CreateHandler godoc
+// @Summary Create a new lock
+// @Description Creates a new distributed lock with the specified configuration
 // @Tags locks
 // @Accept json
 // @Produce json
-// @Param request body RefreshRequest true "Lock refresh parameters"
-// @Success 200 {object} RefreshResponse
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /refresh [post]
-func RefreshHandler(c *gin.Context, g *GlockServer) {
-	var req RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if !IsValidOwner(req.OwnerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
-		return
-	}
-
-	if req.Token == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for refresh requests"})
-	}
-
-	lock, code, err := g.RefreshLock(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"lock": lock})
-}
-
-// VerifyHandler handles the /verify route.
-// @Summary Verify lock ownership
-// @Description Verify that a client still owns a lock
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param request body VerifyRequest true "Lock verification parameters"
-// @Success 200 {object} VerifyResponse
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /verify [post]
-func VerifyHandler(c *gin.Context, g *GlockServer) {
-	var req VerifyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if req.Token == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for verify requests"})
-	}
-
-	ok, code, err := g.VerifyLock(&req)
-	if err != nil || !ok {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"success": ok})
-}
-
-// ReleaseHandler handles the /release route.
-// @Summary Release a lock
-// @Description Release ownership of a lock
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param request body ReleaseRequest true "Lock release parameters"
-// @Success 200 {object} ReleaseResponse
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /release [post]
-func ReleaseHandler(c *gin.Context, g *GlockServer) {
-	var req ReleaseRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if !IsValidOwner(req.OwnerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
-		return
-	}
-
-	if req.Token == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "fencing token required for release requests"})
-	}
-
-	success, code, err := g.ReleaseLock(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"success": success})
-}
-
-// PollHandler handles the /poll route for checking queue status
-// @Summary Poll queue status
-// @Description Check the status of a queued lock acquisition request
-// @Tags queue
-// @Accept json
-// @Produce json
-// @Param request body PollRequest true "Queue poll parameters"
-// @Success 200 {object} PollResponse
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /poll [post]
-func PollHandler(c *gin.Context, g *GlockServer) {
-	var req PollRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if req.RequestID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request_id must not be empty"})
-		return
-	}
-
-	if !IsValidOwner(req.OwnerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
-		return
-	}
-
-	resp, code, err := g.PollQueue(&req)
-	if err != nil && resp == nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, resp)
-}
-
-// RemoveFromQueueHandler handles the /remove route for removing queued requests
-// @Summary Remove a request from queue
-// @Description Remove a queued lock acquisition request
-// @Tags queue
-// @Accept json
-// @Produce json
-// @Param request body PollRequest true "Queue removal parameters"
-// @Success 200 {object} map[string]bool
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /remove [post]
-func RemoveFromQueueHandler(c *gin.Context, g *GlockServer) {
-	var req PollRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	if req.RequestID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request_id must not be empty"})
-		return
-	}
-
-	if !IsValidOwner(req.OwnerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "owner_id must be valid UUID"})
-		return
-	}
-
-	success, code, err := g.RemoveFromQueue(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, gin.H{"removed": success})
-}
-
-// ListQueueHandler handles the /list route for listing all queued requests
-// @Summary List all requests in queue
-// @Description Get a list of all queued lock acquisition requests for a specific lock
-// @Tags queue
-// @Accept json
-// @Produce json
-// @Param request body QueueListRequest true "Queue list parameters"
-// @Success 200 {object} QueueListResponse
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /list [post]
-func ListQueueHandler(c *gin.Context, g *GlockServer) {
-	var req QueueListRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	response, code, err := g.ListQueue(&req)
-	if err != nil {
-		c.JSON(code, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(code, response)
-}
-
-// StatusHandler handles the /status route.
-// @Summary Get server status
-// @Description Get the current status of all locks on the server
-// @Tags status
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string][]Lock
-// @Router /status [get]
-func StatusHandler(c *gin.Context, g *GlockServer) {
-	locks := make([]*Lock, 0)
-	g.Locks.Range(func(key, value any) bool {
-		if node, ok := value.(*Node); ok {
-			lock := node.Lock
-			lock.mu.Lock()
-			lock.QueueSize = lock.getCurrentQueueSize()
-			lock.mu.Unlock()
-			locks = append(locks, lock)
+// @Param lock body CreateLockRequest true "Lock configuration"
+// @Param Idempotency-Key header string false "Idempotency key for safe retries"
+// @Success 201 {object} CreateResp "Lock created successfully"
+// @Failure 400 {object} ErrorResp "Invalid request"
+// @Failure 409 {object} ErrorResp "Lock already exists"
+// @Failure 503 {object} ErrorResp "Server capacity reached"
+// @Router /locks [post]
+func CreateHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req CreateLockRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: err.Error()})
+			return
 		}
-		return true
-	})
-	c.JSON(http.StatusOK, gin.H{"locks": locks})
+
+		idemKey := c.GetHeader("Idempotency-Key")
+		resp, err := s.Create(req.LockID, req.Config, req.Tags, idemKey)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		if resp.Created {
+			c.JSON(http.StatusCreated, resp)
+		} else {
+			c.JSON(http.StatusOK, resp)
+		}
+	}
 }
 
-// ListHandler handles the /list route.
+// DeleteHandler godoc
+// @Summary Delete a lock
+// @Description Deletes an existing lock and releases all queued waiters
+// @Tags locks
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Success 200 {object} DeleteResp "Lock deleted successfully"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id} [delete]
+func DeleteHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		resp, err := s.Delete(lockID)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// AcquireHandler godoc
+// @Summary Acquire a lock (create lease)
+// @Description Attempts to acquire a lock for a client. Returns granted if successful, queued if waiting, or busy if lock is held and wait=false
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Param request body AcquireLeaseRequest true "Acquire request"
+// @Param Idempotency-Key header string false "Idempotency key for safe retries"
+// @Success 200 {object} AcquireResp "Lock acquired (granted)"
+// @Success 202 {object} AcquireResp "Added to queue (queued)"
+// @Success 409 {object} AcquireResp "Lock is busy"
+// @Failure 404 {object} AcquireResp "Lock not found"
+// @Failure 400 {object} ErrorResp "Invalid request"
+// @Failure 503 {object} ErrorResp "Queue full or capacity reached"
+// @Router /locks/{lock_id}/lease [post]
+func AcquireHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		var req AcquireLeaseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: err.Error()})
+			return
+		}
+
+		idemKey := c.GetHeader("Idempotency-Key")
+		fullReq := AcquireReq{
+			LockID:   lockID,
+			ClientID: req.ClientID,
+			LeaseTTL: req.LeaseTTL,
+			Wait:     req.Wait,
+			Timeout:  req.Timeout,
+			IdemKey:  idemKey,
+		}
+
+		resp, err := s.Acquire(fullReq)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		statusCode := http.StatusOK
+		if resp.State == "queued" {
+			statusCode = http.StatusAccepted
+		} else if resp.State == "busy" {
+			statusCode = http.StatusConflict
+		}
+
+		c.JSON(statusCode, resp)
+	}
+}
+
+// RefreshHandler godoc
+// @Summary Refresh a lock lease
+// @Description Extends the TTL of an existing lock lease
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Param request body RefreshLeaseRequest true "Refresh request"
+// @Param Idempotency-Key header string false "Idempotency key for safe retries"
+// @Success 200 {object} RefreshResp "Lease refreshed successfully"
+// @Failure 400 {object} ErrorResp "Invalid request or lease"
+// @Failure 403 {object} ErrorResp "Not the lock owner"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id}/lease [put]
+func RefreshHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		var req RefreshLeaseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: err.Error()})
+			return
+		}
+
+		idemKey := c.GetHeader("Idempotency-Key")
+		fullReq := RefreshReq{
+			LockID:   lockID,
+			ClientID: req.ClientID,
+			LeaseID:  req.LeaseID,
+			NewTTL:   req.NewTTL,
+			IdemKey:  idemKey,
+		}
+
+		resp, err := s.Refresh(fullReq)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// ReleaseHandler godoc
+// @Summary Release a lock (delete lease)
+// @Description Releases a lock held by a client, allowing the next queued client to acquire it
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Param request body ReleaseLeaseRequest true "Release request"
+// @Param Idempotency-Key header string false "Idempotency key for safe retries"
+// @Success 200 {object} ReleaseResp "Lock released successfully"
+// @Failure 400 {object} ErrorResp "Invalid request or lease"
+// @Failure 403 {object} ErrorResp "Not the lock owner"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id}/lease [delete]
+func ReleaseHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		var req ReleaseLeaseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: err.Error()})
+			return
+		}
+
+		idemKey := c.GetHeader("Idempotency-Key")
+		fullReq := ReleaseReq{
+			LockID:   lockID,
+			ClientID: req.ClientID,
+			LeaseID:  req.LeaseID,
+			IdemKey:  idemKey,
+		}
+
+		resp, err := s.Release(fullReq)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// StatusHandler godoc
+// @Summary Get lock status
+// @Description Returns the current status of a specific lock including owner and queue information
+// @Tags locks
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Success 200 {object} StatusResp "Lock status"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id} [get]
+func StatusHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		resp, err := s.Status(lockID)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// QueueGetHandler godoc
+// @Summary Get lock queue
+// @Description Returns the queue of clients waiting to acquire a lock
+// @Tags locks
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Param limit query int false "Maximum number of queue entries to return" default(100)
+// @Success 200 {object} QueueGetResp "Queue entries"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id}/queue [get]
+func QueueGetHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		limit := 100
+		if limitParam := c.Query("limit"); limitParam != "" {
+			var parsed int
+			if _, err := fmt.Sscanf(limitParam, "%d", &parsed); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+
+		resp, err := s.QueueGet(lockID, limit)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// QueueDelHandler godoc
+// @Summary Remove entry from lock queue
+// @Description Removes a specific client's wait entry from a lock's queue
+// @Tags locks
+// @Accept json
+// @Produce json
+// @Param lock_id path string true "Lock ID"
+// @Param wait_id path string true "Wait ID"
+// @Param request body QueueDeleteRequest true "Delete request"
+// @Success 200 {object} QueueDelResp "Entry removed"
+// @Failure 400 {object} ErrorResp "Invalid request"
+// @Failure 404 {object} ErrorResp "Lock or wait entry not found"
+// @Router /locks/{lock_id}/queue/{wait_id} [delete]
+func QueueDelHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		waitID := c.Param("wait_id")
+		if lockID == "" || waitID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id and wait_id are required"})
+			return
+		}
+
+		var req QueueDeleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: err.Error()})
+			return
+		}
+
+		resp, err := s.QueueDel(lockID, waitID, req.ClientID)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// ListHandler godoc
 // @Summary List all locks
-// @Description Get a list of all lock names on the server
-// @Tags status
-// @Accept json
+// @Description Returns a list of all lock IDs in the system
+// @Tags locks
 // @Produce json
-// @Success 200 {object} map[string][]string
-// @Router /list [get]
-func ListHandler(c *gin.Context, g *GlockServer) {
-	locks := make([]*string, 0)
-	g.Locks.Range(func(key, value any) bool {
-		if node, ok := value.(*Node); ok {
-			locks = append(locks, &node.Lock.Name)
+// @Success 200 {object} ListLocksResponse "List of lock IDs"
+// @Failure 500 {object} ErrorResp "Internal server error"
+// @Router /locks [get]
+func ListHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		locks, err := s.List()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResp{Error: err.Error()})
+			return
 		}
-		return true
-	})
-	c.JSON(http.StatusOK, gin.H{"locks": locks})
+
+		c.JSON(http.StatusOK, ListLocksResponse{Locks: locks})
+	}
 }
 
-// ConfigHandler handles the /config route to get current configuration
-// @Summary Get server configuration
-// @Description Get the current server configuration
-// @Tags config
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string]Config
-// @Router /config [get]
-func ConfigHandler(c *gin.Context, g *GlockServer) {
-	c.JSON(http.StatusOK, gin.H{"config": g.Config})
-}
-
-// UpdateConfigHandler handles the /config/update route for runtime configuration updates
-// @Summary Update server configuration
-// @Description Update the server configuration at runtime
-// @Tags config
-// @Accept json
-// @Produce json
-// @Param request body Config true "New configuration"
-// @Success 200 {object} map[string]string
-// @Failure 400 {object} map[string]string
-// @Router /config/update [post]
-func UpdateConfigHandler(c *gin.Context, g *GlockServer) {
-	var req Config
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := req.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	g.Config.Capacity = req.Capacity
-	g.Config.DefaultTTL = req.DefaultTTL
-	g.Config.DefaultMaxTTL = req.DefaultMaxTTL
-	g.Config.DefaultQueueTimeout = req.DefaultQueueTimeout
-	g.Config.CleanupInterval = req.CleanupInterval
-
-	c.JSON(http.StatusOK, gin.H{"message": "configuration updated", "config": g.Config})
-}
-
-// FreezeLockHandler handles the /freeze route
-// @Summary Freeze a lock
-// @Description Freeze a lock to prevent acquisition and refresh
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param name path string true "Lock name"
-// @Success 200 {object} map[string]bool
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /freeze/{name} [post]
-func FreezeLockHandler(c *gin.Context, g *GlockServer) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	lockVal, exists := g.Locks.Load(name)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
-		return
-	}
-
-	node := lockVal.(*Node)
-	lock := node.Lock
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
-
-	if lock.Frozen {
-		c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock is already frozen"})
-		return
-	}
-
-	lock.Frozen = true
-	c.JSON(http.StatusOK, gin.H{"frozen": true, "message": "lock frozen successfully"})
-}
-
-// UnfreezeLockHandler handles the /unfreeze route
-// @Summary Unfreeze a lock
-// @Description Unfreeze a lock to allow acquisition and refresh
-// @Tags locks
-// @Accept json
-// @Produce json
-// @Param name path string true "Lock name"
-// @Success 200 {object} map[string]bool
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router /unfreeze/{name} [post]
-func UnfreezeLockHandler(c *gin.Context, g *GlockServer) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not be empty"})
-		return
-	}
-
-	lockVal, exists := g.Locks.Load(name)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
-		return
-	}
-
-	node := lockVal.(*Node)
-	lock := node.Lock
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
-
-	if !lock.Frozen {
-		c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock is already unfrozen"})
-		return
-	}
-
-	lock.Frozen = false
-	c.JSON(http.StatusOK, gin.H{"frozen": false, "message": "lock unfrozen successfully"})
-}
-
-// MetricsHandler handles the /metrics/:name route.
+// MetricsHandler godoc
 // @Summary Get lock metrics
-// @Description Get comprehensive metrics for a specific lock
-// @Tags metrics
-// @Accept json
+// @Description Returns detailed metrics and statistics for a specific lock
+// @Tags locks
 // @Produce json
-// @Param name path string true "Lock name"
-// @Success 200 {object} MetricsResponse
-// @Failure 404 {object} map[string]string
-// @Router /metrics/{name} [get]
-func MetricsHandler(c *gin.Context, g *GlockServer) {
-	lockName := c.Param("name")
-	if lockName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "lock name is required"})
-		return
+// @Param lock_id path string true "Lock ID"
+// @Success 200 {object} MetricsResp "Lock metrics"
+// @Failure 404 {object} ErrorResp "Lock not found"
+// @Router /locks/{lock_id}/metrics [get]
+func MetricsHandler(s *Server) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lockID := c.Param("lock_id")
+		if lockID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResp{Error: "lock_id is required"})
+			return
+		}
+
+		resp, err := s.Metrics(lockID)
+		if err != nil {
+			c.JSON(mapErrorToStatus(err), ErrorResp{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
 	}
+}
 
-	lockVal, exists := g.Locks.Load(lockName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "lock not found"})
-		return
-	}
+type CreateLockRequest struct {
+	LockID string     `json:"lock_id" binding:"required" example:"my-resource-lock"`
+	Config LockConfig `json:"config" binding:"required"`
+	Tags   []string   `json:"tags,omitempty" example:"production,critical"`
+}
 
-	node := lockVal.(*Node)
-	lock := node.Lock
-	metrics := lock.GetMetrics()
+type AcquireLeaseRequest struct {
+	ClientID string   `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
+	LeaseTTL Duration `json:"lease_ttl,omitempty" swaggertype:"string" example:"30s"`
+	Wait     bool     `json:"wait" example:"true"`
+	Timeout  Duration `json:"timeout,omitempty" swaggertype:"string" example:"5m"`
+}
 
-	response := MetricsResponse{
-		LockName: lockName,
-		Metrics:  metrics,
-	}
+type RefreshLeaseRequest struct {
+	ClientID string   `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
+	LeaseID  string   `json:"lease_id" binding:"required" example:"lease-123456"`
+	NewTTL   Duration `json:"new_ttl,omitempty" swaggertype:"string" example:"30s"`
+}
 
-	c.JSON(http.StatusOK, response)
+type ReleaseLeaseRequest struct {
+	ClientID string `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
+	LeaseID  string `json:"lease_id" binding:"required" example:"lease-123456"`
+}
+
+type QueueDeleteRequest struct {
+	ClientID string `json:"client_id" binding:"required,uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
+}
+
+type ListLocksResponse struct {
+	Locks []string `json:"locks" example:"lock1,lock2,lock3"`
 }

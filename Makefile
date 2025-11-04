@@ -37,6 +37,11 @@ test-client:
 
 test-all: test-server test-client
 
+# Benchmark targets
+benchmark-server:
+	@echo "Running server benchmarks..."
+	cd glock-server && go test -bench=. -run='^$$' ./core -count=1 -benchmem
+
 # Clean target
 clean:
 	@echo "Cleaning build artifacts..."

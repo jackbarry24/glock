@@ -9,34 +9,31 @@ This repo contains:
 - Run server: `cd glock-server && go run ./cmd`
 - Use client:
   ```go
-  g, _ := glock.Connect("http://localhost:8080")
+  package main
 
-  // Basic usage
-  l, _ := g.Acquire("my-lock", "worker-1")
-  l.StartHeartbeat()
-  // work ...
-  _ = l.Release()
+  import (
+    "fmt"
+    "time"
+    "glock/glock"
+  )
 
-  // Queue usage - Manual polling
-  err := g.CreateLock("queued-lock", "30s", "5m", glock.QueueFIFO, "2m")
-  lock, queueResp, err := g.AcquireOrQueue("queued-lock")
-  if queueResp != nil {
-    // Lock is queued, poll for status
-    for {
-      resp, _ := g.PollQueue("queued-lock", queueResp.RequestID)
-      if resp.Status == "ready" {
-        lock = resp.Lock
-        break
-      }
-      time.Sleep(time.Second)
-    }
-  }
+  func main() {
+    g, err := glock.Connect("http://localhost:8080")
+    if err != nil { panic(err) }
 
-  // OR use the convenient AcquireOrWait method
-  lock, err := g.AcquireOrWait("queued-lock", 30*time.Second)
-  if lock != nil {
-    lock.StartHeartbeat()
-    // work ...
-    _ = lock.Release()
+    // Create a lock (once)
+    _, err = g.CreateLock("my-lock", glock.LockConfig{DefaultTTL: "30s", MaxTTL: "5m", QueueType: glock.QueueFIFO}, nil, "")
+    if err != nil { panic(err) }
+
+    // Acquire or wait until available
+    lease, err := g.AcquireOrWait("my-lock", "30s", 30*time.Second, 100*time.Millisecond)
+    if err != nil { panic(err) }
+    fmt.Println("acquired", lease.LeaseID)
+
+    // Optionally refresh before expiry
+    _, _ = g.Refresh("my-lock", lease.LeaseID, "30s", "")
+
+    // Release when done
+    _, _ = g.Release("my-lock", lease.LeaseID, "")
   }
   ```

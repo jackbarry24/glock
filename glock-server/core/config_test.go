@@ -2,251 +2,350 @@ package core
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
-	config := DefaultConfig()
+	cfg := DefaultConfig()
 
-	if config.Port != 8080 {
-		t.Errorf("Expected port 8080, got %d", config.Port)
+	if cfg.Port != 8080 {
+		t.Errorf("Default port = %d, want 8080", cfg.Port)
 	}
-	if config.Capacity != 1000 {
-		t.Errorf("Expected capacity 1000, got %d", config.Capacity)
+
+	if cfg.DefaultTTL != 30*time.Second {
+		t.Errorf("Default TTL = %v, want 30s", cfg.DefaultTTL)
 	}
-	if config.DefaultTTL != 30*time.Second {
-		t.Errorf("Expected default TTL 30s, got %v", config.DefaultTTL)
-	}
-	if config.OwnerHistoryMaxSize != 100 {
-		t.Errorf("Expected owner history max size 100, got %d", config.OwnerHistoryMaxSize)
-	}
-	if config.QueueMaxSize != 1024 {
-		t.Errorf("Expected queue max size 1024, got %d", config.QueueMaxSize)
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Default config should be valid: %v", err)
 	}
 }
 
-func TestConfigValidation(t *testing.T) {
+func TestConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  Config
+		modify  func(*Config)
 		wantErr bool
 	}{
 		{
-			name: "valid config",
-			config: Config{
-				Port:                8080,
-				Capacity:            100,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
+			name:    "valid config",
+			modify:  func(c *Config) {},
 			wantErr: false,
 		},
 		{
-			name: "invalid port - too low",
-			config: Config{
-				Port:                0,
-				Capacity:            100,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
+			name:    "invalid port - too low",
+			modify:  func(c *Config) { c.Port = 0 },
+			wantErr: true,
+		},
+		{
+			name:    "invalid port - too high",
+			modify:  func(c *Config) { c.Port = 99999 },
+			wantErr: true,
+		},
+		{
+			name:    "invalid capacity - zero",
+			modify:  func(c *Config) { c.Capacity = 0 },
+			wantErr: true,
+		},
+		{
+			name:    "invalid capacity - exceeds max",
+			modify:  func(c *Config) { c.Capacity = 1048577 },
+			wantErr: true,
+		},
+		{
+			name:    "invalid default ttl",
+			modify:  func(c *Config) { c.DefaultTTL = 0 },
+			wantErr: true,
+		},
+		{
+			name:    "invalid max ttl",
+			modify:  func(c *Config) { c.DefaultMaxTTL = 0 },
+			wantErr: true,
+		},
+		{
+			name: "max ttl less than default ttl",
+			modify: func(c *Config) {
+				c.DefaultTTL = 60 * time.Second
+				c.DefaultMaxTTL = 30 * time.Second
 			},
 			wantErr: true,
 		},
 		{
-			name: "invalid port - too high",
-			config: Config{
-				Port:                70000,
-				Capacity:            100,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
+			name:    "invalid queue timeout",
+			modify:  func(c *Config) { c.DefaultQueueTimeout = 0 },
 			wantErr: true,
 		},
 		{
-			name: "invalid capacity",
-			config: Config{
-				Port:                8080,
-				Capacity:            0,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
+			name:    "invalid queue max size - zero",
+			modify:  func(c *Config) { c.DefaultQueueCapacity = 0 },
 			wantErr: true,
 		},
 		{
-			name: "invalid default TTL",
-			config: Config{
-				Port:                8080,
-				Capacity:            100,
-				DefaultTTL:          0,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
-			wantErr: true,
-		},
-		{
-			name: "max TTL less than TTL",
-			config: Config{
-				Port:                8080,
-				Capacity:            100,
-				DefaultTTL:          5 * time.Minute,
-				DefaultMaxTTL:       time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid owner history max size",
-			config: Config{
-				Port:                8080,
-				Capacity:            100,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 0,
-				QueueMaxSize:        1024,
-				CleanupInterval:     time.Second,
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid queue max size",
-			config: Config{
-				Port:                8080,
-				Capacity:            100,
-				DefaultTTL:          time.Second,
-				DefaultMaxTTL:       5 * time.Minute,
-				DefaultQueueTimeout: time.Minute,
-				OwnerHistoryMaxSize: 100,
-				QueueMaxSize:        0,
-				CleanupInterval:     time.Second,
-			},
+			name:    "invalid queue max size - exceeds max",
+			modify:  func(c *Config) { c.DefaultQueueCapacity = 1048577 },
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
+			cfg := DefaultConfig()
+			tt.modify(cfg)
+			err := cfg.Validate()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestLoadConfigFromEnv(t *testing.T) {
-	// Set environment variables
-	os.Setenv("GLOCK_PORT", "9090")
-	os.Setenv("GLOCK_CAPACITY", "500")
-	os.Setenv("GLOCK_DEFAULT_TTL", "1m")
-	os.Setenv("GLOCK_OWNER_HISTORY_MAX_SIZE", "200")
-	os.Setenv("GLOCK_QUEUE_MAX_SIZE", "512")
-	defer func() {
-		// Clean up
-		os.Unsetenv("GLOCK_PORT")
-		os.Unsetenv("GLOCK_CAPACITY")
-		os.Unsetenv("GLOCK_DEFAULT_TTL")
-		os.Unsetenv("GLOCK_OWNER_HISTORY_MAX_SIZE")
-		os.Unsetenv("GLOCK_QUEUE_MAX_SIZE")
-	}()
-
-	config := DefaultConfig()
-	err := config.LoadFromEnv()
-	if err != nil {
-		t.Fatalf("LoadFromEnv() error = %v", err)
+func TestConfigLoadFromEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVars  map[string]string
+		validate func(*testing.T, *Config)
+	}{
+		{
+			name: "load port",
+			envVars: map[string]string{
+				"GLOCK_PORT": "9090",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.Port != 9090 {
+					t.Errorf("Port = %d, want 9090", c.Port)
+				}
+			},
+		},
+		{
+			name: "load host",
+			envVars: map[string]string{
+				"GLOCK_HOST": "0.0.0.0",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.Host != "0.0.0.0" {
+					t.Errorf("Host = %s, want 0.0.0.0", c.Host)
+				}
+			},
+		},
+		{
+			name: "load ttl",
+			envVars: map[string]string{
+				"GLOCK_DEFAULT_TTL": "1m",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.DefaultTTL != time.Minute {
+					t.Errorf("DefaultTTL = %v, want 1m", c.DefaultTTL)
+				}
+			},
+		},
+		{
+			name: "load capacity",
+			envVars: map[string]string{
+				"GLOCK_CAPACITY": "5000",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.Capacity != 5000 {
+					t.Errorf("Capacity = %d, want 5000", c.Capacity)
+				}
+			},
+		},
+		{
+			name: "load queue timeout",
+			envVars: map[string]string{
+				"GLOCK_DEFAULT_QUEUE_TIMEOUT": "10m",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.DefaultQueueTimeout != 10*time.Minute {
+					t.Errorf("DefaultQueueTimeout = %v, want 10m", c.DefaultQueueTimeout)
+				}
+			},
+		},
+		{
+			name: "load default queue capacity",
+			envVars: map[string]string{
+				"GLOCK_DEFAULT_QUEUE_CAPACITY": "2048",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.DefaultQueueCapacity != 2048 {
+					t.Errorf("DefaultQueueCapacity = %d, want 2048", c.DefaultQueueCapacity)
+				}
+			},
+		},
+		{
+			name: "invalid port ignored",
+			envVars: map[string]string{
+				"GLOCK_PORT": "not-a-number",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.Port != 8080 {
+					t.Errorf("Port should remain default 8080, got %d", c.Port)
+				}
+			},
+		},
+		{
+			name: "invalid duration ignored",
+			envVars: map[string]string{
+				"GLOCK_DEFAULT_TTL": "invalid",
+			},
+			validate: func(t *testing.T, c *Config) {
+				if c.DefaultTTL != 30*time.Second {
+					t.Errorf("DefaultTTL should remain default, got %v", c.DefaultTTL)
+				}
+			},
+		},
 	}
 
-	if config.Port != 9090 {
-		t.Errorf("Expected port 9090, got %d", config.Port)
-	}
-	if config.Capacity != 500 {
-		t.Errorf("Expected capacity 500, got %d", config.Capacity)
-	}
-	if config.DefaultTTL != time.Minute {
-		t.Errorf("Expected default TTL 1m, got %v", config.DefaultTTL)
-	}
-	if config.OwnerHistoryMaxSize != 200 {
-		t.Errorf("Expected owner history max size 200, got %d", config.OwnerHistoryMaxSize)
-	}
-	if config.QueueMaxSize != 512 {
-		t.Errorf("Expected queue max size 512, got %d", config.QueueMaxSize)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.envVars {
+				os.Setenv(k, v)
+				defer os.Unsetenv(k)
+			}
+
+			cfg := DefaultConfig()
+			if err := cfg.LoadFromEnv(); err != nil {
+				t.Fatalf("LoadFromEnv() error = %v", err)
+			}
+
+			tt.validate(t, cfg)
+		})
 	}
 }
 
-func TestLoadConfigFromYAML(t *testing.T) {
-	yamlContent := `
-port: 7070
-capacity: 200
+func TestConfigLoadFromYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name     string
+		yaml     string
+		wantErr  bool
+		validate func(*testing.T, *Config)
+	}{
+		{
+			name: "valid yaml",
+			yaml: `
+port: 9000
+host: "127.0.0.1"
+capacity: 5000
+default_queue_capacity: 2048
 default_ttl: 45s
-`
+default_max_ttl: 10m
+default_queue_timeout: 10m
+`,
+			wantErr: false,
+			validate: func(t *testing.T, c *Config) {
+				if c.Port != 9000 {
+					t.Errorf("Port = %d, want 9000", c.Port)
+				}
+				if c.Host != "127.0.0.1" {
+					t.Errorf("Host = %s, want 127.0.0.1", c.Host)
+				}
+				if c.Capacity != 5000 {
+					t.Errorf("Capacity = %d, want 5000", c.Capacity)
+				}
+				if c.DefaultQueueCapacity != 2048 {
+					t.Errorf("DefaultQueueCapacity = %d, want 2048", c.DefaultQueueCapacity)
+				}
+				if c.DefaultQueueTimeout != 10*time.Minute {
+					t.Errorf("DefaultQueueTimeout = %v, want 10m", c.DefaultQueueTimeout)
+				}
+			},
+		},
+		{
+			name: "invalid yaml",
+			yaml: `
+port: [invalid
+`,
+			wantErr: true,
+		},
+		{
+			name:    "empty file",
+			yaml:    "",
+			wantErr: false,
+			validate: func(t *testing.T, c *Config) {
+				if c.Port != 8080 {
+					t.Errorf("Port should remain default 8080 for empty yaml, got %d", c.Port)
+				}
+			},
+		},
+	}
 
-	// Create temporary file
-	tmpfile, err := os.CreateTemp("", "config*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpfile.Name())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filename := filepath.Join(tmpDir, "config.yaml")
+			if err := os.WriteFile(filename, []byte(tt.yaml), 0644); err != nil {
+				t.Fatalf("Failed to write test file: %v", err)
+			}
 
-	if _, err := tmpfile.Write([]byte(yamlContent)); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
+			cfg := DefaultConfig()
+			err := cfg.LoadFromYAML(filename)
 
-	config := DefaultConfig()
-	err = config.LoadFromYAML(tmpfile.Name())
-	if err != nil {
-		t.Fatalf("LoadFromYAML() error = %v", err)
-	}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoadFromYAML() error = %v, wantErr %v", err, tt.wantErr)
+			}
 
-	if config.Port != 7070 {
-		t.Errorf("Expected port 7070, got %d", config.Port)
-	}
-	if config.Capacity != 200 {
-		t.Errorf("Expected capacity 200, got %d", config.Capacity)
-	}
-	if config.DefaultTTL != 45*time.Second {
-		t.Errorf("Expected default TTL 45s, got %v", config.DefaultTTL)
+			if !tt.wantErr && tt.validate != nil {
+				tt.validate(t, cfg)
+			}
+		})
 	}
 }
 
 func TestLoadConfig(t *testing.T) {
-	// Test loading default config
-	config, err := LoadConfig("")
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
+	t.Run("no file specified", func(t *testing.T) {
+		cfg, err := LoadConfig("")
+		if err != nil {
+			t.Fatalf("LoadConfig(\"\") error = %v", err)
+		}
+		if cfg.Port != 8080 {
+			t.Errorf("Should have default port 8080, got %d", cfg.Port)
+		}
+	})
 
-	if config.Port != 8080 {
-		t.Errorf("Expected default port 8080, got %d", config.Port)
-	}
+	t.Run("nonexistent file", func(t *testing.T) {
+		_, err := LoadConfig("/nonexistent/file.yaml")
+		if err == nil {
+			t.Error("LoadConfig() should error for nonexistent file")
+		}
+	})
 
-	// Test with invalid YAML file
-	_, err = LoadConfig("/nonexistent/file.yaml")
-	if err == nil {
-		t.Error("Expected error for nonexistent file")
-	}
+	t.Run("yaml and env precedence", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filename := filepath.Join(tmpDir, "config.yaml")
+		yaml := `
+port: 9000
+capacity: 5000
+default_queue_capacity: 2048
+default_queue_timeout: 10m
+`
+		if err := os.WriteFile(filename, []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		os.Setenv("GLOCK_PORT", "9090")
+		defer os.Unsetenv("GLOCK_PORT")
+
+		cfg, err := LoadConfig(filename)
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v", err)
+		}
+
+		if cfg.Port != 9090 {
+			t.Errorf("Env should override YAML: Port = %d, want 9090", cfg.Port)
+		}
+
+		if cfg.Capacity != 5000 {
+			t.Errorf("YAML value should be used: Capacity = %d, want 5000", cfg.Capacity)
+		}
+
+		if cfg.DefaultQueueCapacity != 2048 {
+			t.Errorf("YAML value should be used: QueueMaxSize = %d, want 2048", cfg.DefaultQueueCapacity)
+		}
+
+		if cfg.DefaultQueueTimeout != 10*time.Minute {
+			t.Errorf("YAML value should be used: DefaultQueueTimeout = %v, want 10m", cfg.DefaultQueueTimeout)
+		}
+	})
 }

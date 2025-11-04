@@ -1,932 +1,645 @@
 basePath: /api
 definitions:
-  core.AcquireRequest:
-    description: AcquireRequest represents a request to acquire a lock
+  core.AcquireLeaseRequest:
     properties:
-      name:
-        example: my-lock
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
-      owner:
-        example: client-app
+      lease_ttl:
+        example: 30s
         type: string
-      owner_id:
-        example: uuid-123
+      timeout:
+        example: 5m
         type: string
-      queue_request:
-        description: nil = true (default), false = don't queue
+      wait:
+        example: true
         type: boolean
     required:
-    - name
-    - owner
-    - owner_id
+    - client_id
     type: object
-  core.AcquireResponse:
-    description: AcquireResponse represents the response from acquiring a lock
+  core.AcquireResp:
     properties:
-      lock:
-        $ref: '#/definitions/core.Lock'
+      error: {}
+      estimated_wait_ms:
+        type: integer
+      expires_at:
+        type: string
+      fence_token:
+        type: integer
+      lease_id:
+        type: string
+      lock_id:
+        type: string
+      owner_client_id:
+        type: string
+      position:
+        type: integer
+      state:
+        type: string
+      wait_id:
+        type: string
     type: object
-  core.Config:
-    description: Config holds all configuration for the glock server
+  core.CreateLockRequest:
     properties:
-      capacity:
-        example: 1000
-        type: integer
-      cleanup_interval:
-        example: 30s
+      config:
+        $ref: '#/definitions/core.LockConfig'
+      lock_id:
+        example: my-resource-lock
         type: string
-      default_max_ttl:
-        example: 5m
-        type: string
-      default_queue_timeout:
-        example: 5m
-        type: string
-      default_ttl:
-        example: 30s
-        type: string
-      host:
-        example: localhost
-        type: string
-      owner_history_max_size:
-        example: 100
-        type: integer
-      port:
-        example: 8080
-        type: integer
-      queue_max_size:
-        example: 1024
-        type: integer
-    type: object
-  core.CreateRequest:
-    description: CreateRequest represents a request to create a new lock
-    properties:
-      max_ttl:
-        example: 5m
-        type: string
-      metadata: {}
-      name:
-        example: my-lock
-        type: string
-      parent:
-        example: /parent-lock
-        type: string
-      queue_timeout:
-        example: 1m
-        type: string
-      queue_type:
-        allOf:
-        - $ref: '#/definitions/core.QueueBehavior'
-        example: fifo
-      ttl:
-        example: 30s
-        type: string
+      tags:
+        example:
+        - production
+        - critical
+        items:
+          type: string
+        type: array
     required:
-    - max_ttl
-    - name
-    - ttl
+    - config
+    - lock_id
     type: object
-  core.CreateResponse:
-    description: CreateResponse represents the response from creating a lock
+  core.CreateResp:
     properties:
-      lock:
-        $ref: '#/definitions/core.Lock'
+      config:
+        $ref: '#/definitions/core.LockConfig'
+      created:
+        type: boolean
+      error: {}
+      lock_id:
+        type: string
     type: object
-  core.Lock:
-    description: Lock represents a distributed lock with metadata and timing information
+  core.DeleteResp:
+    properties:
+      deleted:
+        type: boolean
+      error: {}
+      lock_id:
+        type: string
+    type: object
+  core.ErrorResp:
+    properties:
+      error:
+        type: string
+    type: object
+  core.Lease:
     properties:
       acquired_at:
         type: string
-      available:
-        example: true
-        type: boolean
-      frozen:
-        example: false
-        type: boolean
-      last_refresh:
+      client_id:
+        type: string
+      expires_at:
+        type: string
+      fence_token:
+        type: integer
+      lease_id:
+        type: string
+    type: object
+  core.ListLocksResponse:
+    properties:
+      locks:
+        example:
+        - lock1
+        - lock2
+        - lock3
+        items:
+          type: string
+        type: array
+    type: object
+  core.LockConfig:
+    properties:
+      default_lease_ttl:
+        example: 30s
         type: string
       max_ttl:
         example: 5m
         type: string
-      metadata: {}
-      name:
-        example: my-lock
-        type: string
-      owner:
-        example: client-app
-        type: string
-      owner_id:
-        example: uuid-123
-        type: string
-      parent:
-        example: /parent-lock
-        type: string
-      queue_size:
-        example: 0
+      queue_capacity:
+        example: 1024
         type: integer
       queue_timeout:
-        example: 1m
+        example: 5m
         type: string
       queue_type:
         allOf:
-        - $ref: '#/definitions/core.QueueBehavior'
+        - $ref: '#/definitions/core.QueueType'
         example: fifo
-      token:
-        example: 12345
-        type: integer
-      ttl:
-        example: 30s
-        type: string
+    required:
+    - default_lease_ttl
+    - max_ttl
     type: object
   core.LockMetrics:
     properties:
-      average_hold_time:
+      avgHoldTimeNs:
+        format: int64
+        type: integer
+      avgQueueTimeNs:
+        format: int64
+        type: integer
+      createdAt:
         type: string
-      average_queue_wait_time:
+      currentHoldTimeNs:
+        format: int64
+        type: integer
+      currentQueueLen:
+        type: integer
+      failedAcquires:
+        format: int64
+        type: integer
+      lastActivityAt:
         type: string
-      created_at:
-        description: Time-based metrics
-        type: string
-      current_hold_time:
-        type: string
-      current_queue_size:
-        description: Queue Statistics
+      maxHoldTimeNs:
+        format: int64
         type: integer
-      failed_acquires:
+      maxTTLExpirations:
+        format: int64
         type: integer
-      failed_operations:
-        description: Error Statistics
+      ownerChanges:
+        format: int64
         type: integer
-      heartbeat_count:
+      queueTimeouts:
+        format: int64
         type: integer
-      last_activity_at:
-        type: string
-      max_hold_time:
-        type: string
-      max_queue_wait_time:
-        type: string
-      max_ttl_expiration_count:
+      successAcquires:
+        format: int64
         type: integer
-      network_errors:
+      totalAcquires:
+        format: int64
         type: integer
-      owner_change_count:
-        description: Owner Statistics
+      totalHoldTimeNs:
+        format: int64
         type: integer
-      owner_history:
-        description: Owner history (keep last N owners for trending)
-        items:
-          $ref: '#/definitions/core.OwnerRecord'
-        type: array
-      queue_timeout_count:
+      totalQueued:
+        format: int64
         type: integer
-      refresh_count:
+      totalRefreshes:
+        format: int64
         type: integer
-      stale_token_errors:
+      totalReleases:
+        format: int64
         type: integer
-      successful_acquires:
+      ttlexpirations:
+        format: int64
         type: integer
-      total_acquire_attempts:
-        description: Usage Statistics
-        type: integer
-      total_hold_time:
-        type: string
-      total_queued_requests:
-        type: integer
-      ttl_expiration_count:
-        description: TTL/Expiration Statistics
-        type: integer
-      unique_owners_count:
+      uniqueOwners:
         type: integer
     type: object
-  core.MetricsResponse:
+  core.LockStatus:
     properties:
-      lock_name:
+      config:
+        $ref: '#/definitions/core.LockConfig'
+      lock_id:
+        type: string
+      owner:
+        $ref: '#/definitions/core.Lease'
+      queue_len:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  core.MetricsResp:
+    properties:
+      error: {}
+      lock_id:
         type: string
       metrics:
         $ref: '#/definitions/core.LockMetrics'
     type: object
-  core.OwnerRecord:
+  core.QueueDelResp:
     properties:
-      acquired_at:
-        type: string
-      hold_time:
-        type: string
-      owner:
-        type: string
-      owner_id:
-        type: string
-      released_at:
-        type: string
+      error: {}
+      removed:
+        type: boolean
     type: object
-  core.PollRequest:
+  core.QueueDeleteRequest:
     properties:
-      name:
-        type: string
-      owner_id:
-        type: string
-      request_id:
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     required:
-    - name
-    - owner_id
-    - request_id
+    - client_id
     type: object
-  core.PollResponse:
+  core.QueueGetResp:
     properties:
-      lock:
-        $ref: '#/definitions/core.Lock'
-      position:
-        type: integer
-      status:
-        description: '"waiting", "ready", "expired", "not_found"'
+      error: {}
+      lock_id:
         type: string
+      queue:
+        items:
+          $ref: '#/definitions/core.WaitEntryView'
+        type: array
     type: object
-  core.QueueBehavior:
-    description: QueueBehavior defines how lock queuing works
+  core.QueueType:
     enum:
     - none
     - fifo
     - lifo
     type: string
     x-enum-varnames:
-    - QueueNone
-    - QueueFIFO
-    - QueueLIFO
-  core.QueueListRequest:
+    - QueueTypeNone
+    - QueueTypeFIFO
+    - QueueTypeLIFO
+  core.RefreshLeaseRequest:
     properties:
-      name:
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lease_id:
+        example: lease-123456
+        type: string
+      new_ttl:
+        example: 30s
         type: string
     required:
-    - name
+    - client_id
+    - lease_id
     type: object
-  core.QueueListResponse:
+  core.RefreshResp:
     properties:
-      lock_name:
+      error: {}
+      expires_at:
         type: string
-      requests:
-        items:
-          $ref: '#/definitions/core.QueueRequest'
-        type: array
-    type: object
-  core.QueueRequest:
-    properties:
-      id:
+      fence_token:
+        type: integer
+      lease_id:
         type: string
-      name:
+      lock_id:
         type: string
-      owner:
-        type: string
-      owner_id:
-        type: string
-      queued_at:
-        type: string
-      timeout_at:
+      state:
         type: string
     type: object
-  core.QueueResponse:
+  core.ReleaseLeaseRequest:
     properties:
+      client_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lease_id:
+        example: lease-123456
+        type: string
+    required:
+    - client_id
+    - lease_id
+    type: object
+  core.ReleaseResp:
+    properties:
+      error: {}
+      lock_id:
+        type: string
+      next_owner_client_id:
+        type: string
+      state:
+        type: string
+    type: object
+  core.StatusResp:
+    properties:
+      error: {}
+      status:
+        $ref: '#/definitions/core.LockStatus'
+    type: object
+  core.WaitEntryView:
+    properties:
+      client_id:
+        type: string
       position:
         type: integer
-      request_id:
+      timeout_at:
         type: string
-    type: object
-  core.RefreshRequest:
-    description: RefreshRequest represents a request to refresh a lock
-    properties:
-      name:
-        example: my-lock
+      wait_id:
         type: string
-      owner_id:
-        example: uuid-123
-        type: string
-      token:
-        example: 12345
-        type: integer
-    required:
-    - name
-    - owner_id
-    - token
-    type: object
-  core.RefreshResponse:
-    description: RefreshResponse represents the response from refreshing a lock
-    properties:
-      lock:
-        $ref: '#/definitions/core.Lock'
-    type: object
-  core.ReleaseRequest:
-    properties:
-      name:
-        type: string
-      owner_id:
-        type: string
-      token:
-        type: integer
-    required:
-    - name
-    - owner_id
-    - token
-    type: object
-  core.ReleaseResponse:
-    properties:
-      success:
-        type: boolean
-    type: object
-  core.UpdateRequest:
-    properties:
-      max_ttl:
-        type: string
-      metadata: {}
-      name:
-        type: string
-      parent:
-        type: string
-      queue_timeout:
-        type: string
-      queue_type:
-        $ref: '#/definitions/core.QueueBehavior'
-      ttl:
-        type: string
-    required:
-    - max_ttl
-    - name
-    - ttl
-    type: object
-  core.UpdateResponse:
-    properties:
-      lock:
-        $ref: '#/definitions/core.Lock'
-    type: object
-  core.VerifyRequest:
-    properties:
-      name:
-        type: string
-      owner_id:
-        type: string
-      token:
-        type: integer
-    required:
-    - name
-    - owner_id
-    - token
-    type: object
-  core.VerifyResponse:
-    properties:
-      success:
-        type: boolean
-    required:
-    - success
     type: object
 host: localhost:8080
 info:
   contact: {}
-  description: In-memory lock queue
+  description: In-memory distributed lock server with queue support
   title: Glock Server API
   version: "1.0"
 paths:
-  /acquire:
-    post:
-      consumes:
-      - application/json
-      description: Attempt to acquire a lock, either immediately or queue the request
-      parameters:
-      - description: Lock acquisition parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.AcquireRequest'
+  /locks:
+    get:
+      description: Returns a list of all lock IDs in the system
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: List of lock IDs
           schema:
-            $ref: '#/definitions/core.AcquireResponse'
-        "202":
-          description: Accepted
+            $ref: '#/definitions/core.ListLocksResponse'
+        "500":
+          description: Internal server error
           schema:
-            $ref: '#/definitions/core.QueueResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: Conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Acquire a lock
+            $ref: '#/definitions/core.ErrorResp'
+      summary: List all locks
       tags:
       - locks
-  /config:
-    get:
-      consumes:
-      - application/json
-      description: Get the current server configuration
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              $ref: '#/definitions/core.Config'
-            type: object
-      summary: Get server configuration
-      tags:
-      - config
-  /config/update:
     post:
       consumes:
       - application/json
-      description: Update the server configuration at runtime
+      description: Creates a new distributed lock with the specified configuration
       parameters:
-      - description: New configuration
+      - description: Lock configuration
         in: body
-        name: request
+        name: lock
         required: true
         schema:
-          $ref: '#/definitions/core.Config'
+          $ref: '#/definitions/core.CreateLockRequest'
+      - description: Idempotency key for safe retries
+        in: header
+        name: Idempotency-Key
+        type: string
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Lock created successfully
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.CreateResp'
         "400":
-          description: Bad Request
+          description: Invalid request
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Update server configuration
-      tags:
-      - config
-  /create:
-    post:
-      consumes:
-      - application/json
-      description: Create a new distributed lock with optional queue configuration
-      parameters:
-      - description: Lock creation parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.CreateRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/core.CreateResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
         "409":
-          description: Conflict
+          description: Lock already exists
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
+        "503":
+          description: Server capacity reached
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
       summary: Create a new lock
       tags:
       - locks
-  /delete/{name}:
+  /locks/{lock_id}:
     delete:
-      consumes:
-      - application/json
-      description: Delete an existing lock by name
+      description: Deletes an existing lock and releases all queued waiters
       parameters:
-      - description: Lock name
+      - description: Lock ID
         in: path
-        name: name
+        name: lock_id
         required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Lock deleted successfully
           schema:
-            additionalProperties:
-              type: boolean
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.DeleteResp'
         "404":
-          description: Not Found
+          description: Lock not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
       summary: Delete a lock
       tags:
       - locks
-  /freeze/{name}:
-    post:
-      consumes:
-      - application/json
-      description: Freeze a lock to prevent acquisition and refresh
+    get:
+      description: Returns the current status of a specific lock including owner and
+        queue information
       parameters:
-      - description: Lock name
+      - description: Lock ID
         in: path
-        name: name
+        name: lock_id
         required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Lock status
           schema:
-            additionalProperties:
-              type: boolean
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.StatusResp'
         "404":
-          description: Not Found
+          description: Lock not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Freeze a lock
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Get lock status
       tags:
       - locks
-  /list:
-    get:
+  /locks/{lock_id}/lease:
+    delete:
       consumes:
       - application/json
-      description: Get a list of all lock names on the server
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              items:
-                type: string
-              type: array
-            type: object
-      summary: List all locks
-      tags:
-      - status
-    post:
-      consumes:
-      - application/json
-      description: Get a list of all queued lock acquisition requests for a specific
-        lock
+      description: Releases a lock held by a client, allowing the next queued client
+        to acquire it
       parameters:
-      - description: Queue list parameters
+      - description: Lock ID
+        in: path
+        name: lock_id
+        required: true
+        type: string
+      - description: Release request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/core.QueueListRequest'
+          $ref: '#/definitions/core.ReleaseLeaseRequest'
+      - description: Idempotency key for safe retries
+        in: header
+        name: Idempotency-Key
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Lock released successfully
           schema:
-            $ref: '#/definitions/core.QueueListResponse'
+            $ref: '#/definitions/core.ReleaseResp'
         "400":
-          description: Bad Request
+          description: Invalid request or lease
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
+        "403":
+          description: Not the lock owner
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
         "404":
-          description: Not Found
+          description: Lock not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: List all requests in queue
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Release a lock (delete lease)
       tags:
-      - queue
-  /metrics/{name}:
-    get:
+      - locks
+    post:
       consumes:
       - application/json
-      description: Get comprehensive metrics for a specific lock
+      description: Attempts to acquire a lock for a client. Returns granted if successful,
+        queued if waiting, or busy if lock is held and wait=false
       parameters:
-      - description: Lock name
+      - description: Lock ID
         in: path
-        name: name
+        name: lock_id
+        required: true
+        type: string
+      - description: Acquire request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/core.AcquireLeaseRequest'
+      - description: Idempotency key for safe retries
+        in: header
+        name: Idempotency-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Lock acquired (granted)
+          schema:
+            $ref: '#/definitions/core.AcquireResp'
+        "202":
+          description: Added to queue (queued)
+          schema:
+            $ref: '#/definitions/core.AcquireResp'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
+        "404":
+          description: Lock not found
+          schema:
+            $ref: '#/definitions/core.AcquireResp'
+        "409":
+          description: Lock is busy
+          schema:
+            $ref: '#/definitions/core.AcquireResp'
+        "503":
+          description: Queue full or capacity reached
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Acquire a lock (create lease)
+      tags:
+      - locks
+    put:
+      consumes:
+      - application/json
+      description: Extends the TTL of an existing lock lease
+      parameters:
+      - description: Lock ID
+        in: path
+        name: lock_id
+        required: true
+        type: string
+      - description: Refresh request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/core.RefreshLeaseRequest'
+      - description: Idempotency key for safe retries
+        in: header
+        name: Idempotency-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Lease refreshed successfully
+          schema:
+            $ref: '#/definitions/core.RefreshResp'
+        "400":
+          description: Invalid request or lease
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
+        "403":
+          description: Not the lock owner
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
+        "404":
+          description: Lock not found
+          schema:
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Refresh a lock lease
+      tags:
+      - locks
+  /locks/{lock_id}/metrics:
+    get:
+      description: Returns detailed metrics and statistics for a specific lock
+      parameters:
+      - description: Lock ID
+        in: path
+        name: lock_id
         required: true
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Lock metrics
           schema:
-            $ref: '#/definitions/core.MetricsResponse'
+            $ref: '#/definitions/core.MetricsResp'
         "404":
-          description: Not Found
+          description: Lock not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
       summary: Get lock metrics
       tags:
-      - metrics
-  /poll:
-    post:
-      consumes:
-      - application/json
-      description: Check the status of a queued lock acquisition request
-      parameters:
-      - description: Queue poll parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.PollRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/core.PollResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Poll queue status
-      tags:
-      - queue
-  /refresh:
-    post:
-      consumes:
-      - application/json
-      description: Extend the TTL of an acquired lock
-      parameters:
-      - description: Lock refresh parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.RefreshRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/core.RefreshResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: Forbidden
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Refresh a lock
-      tags:
       - locks
-  /release:
-    post:
-      consumes:
-      - application/json
-      description: Release ownership of a lock
-      parameters:
-      - description: Lock release parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.ReleaseRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/core.ReleaseResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: Forbidden
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Release a lock
-      tags:
-      - locks
-  /remove:
-    post:
-      consumes:
-      - application/json
-      description: Remove a queued lock acquisition request
-      parameters:
-      - description: Queue removal parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.PollRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: boolean
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Remove a request from queue
-      tags:
-      - queue
-  /status:
+  /locks/{lock_id}/queue:
     get:
-      consumes:
-      - application/json
-      description: Get the current status of all locks on the server
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              items:
-                $ref: '#/definitions/core.Lock'
-              type: array
-            type: object
-      summary: Get server status
-      tags:
-      - status
-  /unfreeze/{name}:
-    post:
-      consumes:
-      - application/json
-      description: Unfreeze a lock to allow acquisition and refresh
+      description: Returns the queue of clients waiting to acquire a lock
       parameters:
-      - description: Lock name
+      - description: Lock ID
         in: path
-        name: name
+        name: lock_id
         required: true
         type: string
+      - default: 100
+        description: Maximum number of queue entries to return
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Queue entries
           schema:
-            additionalProperties:
-              type: boolean
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.QueueGetResp'
         "404":
-          description: Not Found
+          description: Lock not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Unfreeze a lock
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Get lock queue
       tags:
       - locks
-  /update:
-    post:
+  /locks/{lock_id}/queue/{wait_id}:
+    delete:
       consumes:
       - application/json
-      description: Update an existing lock's TTL, MaxTTL, and queue configuration
+      description: Removes a specific client's wait entry from a lock's queue
       parameters:
-      - description: Lock update parameters
+      - description: Lock ID
+        in: path
+        name: lock_id
+        required: true
+        type: string
+      - description: Wait ID
+        in: path
+        name: wait_id
+        required: true
+        type: string
+      - description: Delete request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/core.UpdateRequest'
+          $ref: '#/definitions/core.QueueDeleteRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Entry removed
           schema:
-            $ref: '#/definitions/core.UpdateResponse'
+            $ref: '#/definitions/core.QueueDelResp'
         "400":
-          description: Bad Request
+          description: Invalid request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/core.ErrorResp'
         "404":
-          description: Not Found
+          description: Lock or wait entry not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Update lock configuration
-      tags:
-      - locks
-  /verify:
-    post:
-      consumes:
-      - application/json
-      description: Verify that a client still owns a lock
-      parameters:
-      - description: Lock verification parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/core.VerifyRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/core.VerifyResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: Forbidden
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Verify lock ownership
+            $ref: '#/definitions/core.ErrorResp'
+      summary: Remove entry from lock queue
       tags:
       - locks
 swagger: "2.0"

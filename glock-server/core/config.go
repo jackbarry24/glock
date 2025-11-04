@@ -15,31 +15,24 @@ type Config struct {
 	Port int    `yaml:"port" json:"port" example:"8080"`
 	Host string `yaml:"host" json:"host" example:"localhost"`
 
-	Capacity            int           `yaml:"capacity" json:"capacity" example:"1000"`
-	DefaultTTL          time.Duration `yaml:"default_ttl" json:"default_ttl" swaggertype:"string" example:"30s"`
-	DefaultMaxTTL       time.Duration `yaml:"default_max_ttl" json:"default_max_ttl" swaggertype:"string" example:"5m"`
-	DefaultQueueTimeout time.Duration `yaml:"default_queue_timeout" json:"default_queue_timeout" swaggertype:"string" example:"5m"`
-
-	OwnerHistoryMaxSize int `yaml:"owner_history_max_size" json:"owner_history_max_size" example:"100"`
-
-	QueueMaxSize int `yaml:"queue_max_size" json:"queue_max_size" example:"1024"`
-
-	CleanupInterval time.Duration `yaml:"cleanup_interval" json:"cleanup_interval" swaggertype:"string" example:"30s"`
+	NumShards            int           `yaml:"num_shards" json:"num_shards" example:"32"`
+	Capacity             int           `yaml:"capacity" json:"capacity" example:"10000"`
+	DefaultTTL           time.Duration `yaml:"default_ttl" json:"default_ttl" swaggertype:"string" example:"30s"`
+	DefaultMaxTTL        time.Duration `yaml:"default_max_ttl" json:"default_max_ttl" swaggertype:"string" example:"5m"`
+	DefaultQueueTimeout  time.Duration `yaml:"default_queue_timeout" json:"default_queue_timeout" swaggertype:"string" example:"5m"`
+	DefaultQueueCapacity int           `yaml:"default_queue_capacity" json:"default_queue_capacity" example:"1024"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Port:                8080,
-		Host:                "",
-		Capacity:            1000,
-		DefaultTTL:          30 * time.Second,
-		DefaultMaxTTL:       5 * time.Minute,
-		DefaultQueueTimeout: 5 * time.Minute,
-		OwnerHistoryMaxSize: 100,
-		QueueMaxSize:        1024,
-
-		CleanupInterval: 5 * time.Second,
+		Port:                 8080,
+		Host:                 "",
+		Capacity:             10000,
+		DefaultTTL:           30 * time.Second,
+		DefaultMaxTTL:        5 * time.Minute,
+		DefaultQueueTimeout:  5 * time.Minute,
+		DefaultQueueCapacity: 1024,
 	}
 }
 
@@ -73,27 +66,15 @@ func (c *Config) LoadFromEnv() error {
 		}
 	}
 
-	if queueTimeout := os.Getenv("GLOCK_DEFAULT_QUEUE_TIMEOUT"); queueTimeout != "" {
-		if d, err := time.ParseDuration(queueTimeout); err == nil && d > 0 {
+	if defaultQueueTimeout := os.Getenv("GLOCK_DEFAULT_QUEUE_TIMEOUT"); defaultQueueTimeout != "" {
+		if d, err := time.ParseDuration(defaultQueueTimeout); err == nil && d > 0 {
 			c.DefaultQueueTimeout = d
 		}
 	}
 
-	if cleanupInterval := os.Getenv("GLOCK_CLEANUP_INTERVAL"); cleanupInterval != "" {
-		if d, err := time.ParseDuration(cleanupInterval); err == nil && d > 0 {
-			c.CleanupInterval = d
-		}
-	}
-
-	if ownerHistoryMaxSize := os.Getenv("GLOCK_OWNER_HISTORY_MAX_SIZE"); ownerHistoryMaxSize != "" {
-		if size, err := strconv.Atoi(ownerHistoryMaxSize); err == nil && size > 0 {
-			c.OwnerHistoryMaxSize = size
-		}
-	}
-
-	if queueMaxSize := os.Getenv("GLOCK_QUEUE_MAX_SIZE"); queueMaxSize != "" {
-		if size, err := strconv.Atoi(queueMaxSize); err == nil && size > 0 {
-			c.QueueMaxSize = size
+	if defaultQueueCapacity := os.Getenv("GLOCK_DEFAULT_QUEUE_CAPACITY"); defaultQueueCapacity != "" {
+		if capacity, err := strconv.Atoi(defaultQueueCapacity); err == nil && capacity > 0 {
+			c.DefaultQueueCapacity = capacity
 		}
 	}
 
@@ -124,6 +105,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("capacity must be greater than 0")
 	}
 
+	if c.Capacity > 1048576 {
+		return fmt.Errorf("capacity must be less than or equal to 1048576 (2^20)")
+	}
+
 	if c.DefaultTTL <= 0 {
 		return fmt.Errorf("default_ttl must be greater than 0")
 	}
@@ -140,16 +125,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("default_queue_timeout must be greater than 0")
 	}
 
-	if c.CleanupInterval <= 0 {
-		return fmt.Errorf("cleanup_interval must be greater than 0")
+	if c.DefaultQueueCapacity <= 0 {
+		return fmt.Errorf("default_queue_capacity must be greater than 0")
 	}
 
-	if c.OwnerHistoryMaxSize <= 0 {
-		return fmt.Errorf("owner_history_max_size must be greater than 0")
-	}
-
-	if c.QueueMaxSize <= 0 {
-		return fmt.Errorf("queue_max_size must be greater than 0")
+	if c.DefaultQueueCapacity > 1048576 {
+		return fmt.Errorf("default_queue_capacity must be less than or equal to 1048576 (2^20)")
 	}
 
 	return nil

@@ -1,92 +1,119 @@
 package glock
 
-// QueueBehavior defines how lock queuing works
-type QueueBehavior string
+import "time"
+
+type QueueType string
 
 const (
-	QueueNone QueueBehavior = "none"
-	QueueFIFO QueueBehavior = "fifo"
-	QueueLIFO QueueBehavior = "lifo"
+	QueueNone QueueType = "none"
+	QueueFIFO QueueType = "fifo"
+	QueueLIFO QueueType = "lifo"
 )
 
-type CreateRequest struct {
-	Name         string        `json:"name" binding:"required"`
-	TTL          string        `json:"ttl" binding:"required"`
-	MaxTTL       string        `json:"max_ttl" binding:"required"`
-	Parent       string        `json:"parent,omitempty"`
-	Metadata     any           `json:"metadata"`
-	QueueType    QueueBehavior `json:"queue_type,omitempty"`
-	QueueTimeout string        `json:"queue_timeout,omitempty"`
+type LockConfig struct {
+	MaxTTL         string    `json:"max_ttl"`
+	DefaultTTL     string    `json:"default_lease_ttl"`
+	MaxQueue       int       `json:"queue_capacity"`
+	QueueType      QueueType `json:"queue_type"`
+	DefaultTimeout string    `json:"queue_timeout,omitempty"`
 }
 
-type CreateResponse struct {
-	Lock *Lock `json:"lock"`
+type CreateLockRequest struct {
+	LockID string     `json:"lock_id"`
+	Config LockConfig `json:"config"`
+	Tags   []string   `json:"tags,omitempty"`
 }
 
-type UpdateRequest struct {
-	Name         string        `json:"name" binding:"required"`
-	TTL          string        `json:"ttl" binding:"required"`
-	MaxTTL       string        `json:"max_ttl" binding:"required"`
-	Parent       string        `json:"parent,omitempty"`
-	Metadata     any           `json:"metadata"`
-	QueueType    QueueBehavior `json:"queue_type,omitempty"`
-	QueueTimeout string        `json:"queue_timeout,omitempty"`
+type AcquireLeaseRequest struct {
+	ClientID string `json:"client_id"`
+	LeaseTTL string `json:"lease_ttl,omitempty"`
+	Wait     bool   `json:"wait"`
+	Timeout  string `json:"timeout,omitempty"`
 }
 
-type UpdateResponse struct {
-	Lock *Lock `json:"lock"`
+type AcquireResp struct {
+	State           string    `json:"state"`
+	LockID          string    `json:"lock_id"`
+	LeaseID         string    `json:"lease_id,omitempty"`
+	OwnerClientID   string    `json:"owner_client_id,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at,omitempty"`
+	FenceToken      int64     `json:"fence_token,omitempty"`
+	WaitID          string    `json:"wait_id,omitempty"`
+	Position        int       `json:"position,omitempty"`
+	EstimatedWaitMs int64     `json:"estimated_wait_ms,omitempty"`
 }
 
-type AcquireRequest struct {
-	Name         string `json:"name" binding:"required"`
-	Owner        string `json:"owner" binding:"required"`
-	OwnerID      string `json:"owner_id" binding:"required"`
-	QueueRequest *bool  `json:"queue_request,omitempty"` // nil = true (default), false = don't queue
+type RefreshLeaseRequest struct {
+	ClientID string `json:"client_id"`
+	LeaseID  string `json:"lease_id"`
+	NewTTL   string `json:"new_ttl,omitempty"`
 }
 
-type AcquireResponse struct {
-	Lock *Lock `json:"lock"`
+type RefreshResp struct {
+	State      string    `json:"state"`
+	LockID     string    `json:"lock_id"`
+	LeaseID    string    `json:"lease_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	FenceToken int64     `json:"fence_token"`
 }
 
-type RefreshRequest struct {
-	Name    string `json:"name" binding:"required"`
-	OwnerID string `json:"owner_id" binding:"required"`
-	Token   uint   `json:"token" binding:"required"`
+type ReleaseLeaseRequest struct {
+	ClientID string `json:"client_id"`
+	LeaseID  string `json:"lease_id"`
 }
 
-type RefreshResponse struct {
-	Lock *Lock `json:"lock"`
+type ReleaseResp struct {
+	State             string `json:"state"`
+	LockID            string `json:"lock_id"`
+	NextOwnerClientID string `json:"next_owner_client_id,omitempty"`
 }
 
-type VerifyRequest struct {
-	Name    string `json:"name" binding:"required"`
-	OwnerID string `json:"owner_id" binding:"required"`
-	Token   uint   `json:"token" binding:"required"`
+type Lease struct {
+	LockID     string
+	LeaseID    string
+	ExpiresAt  time.Time
+	FenceToken int64
 }
 
-type VerifyResponse struct {
-	Success bool `json:"success" binding:"required"`
+type QueueInfo struct {
+	WaitID          string
+	Position        int
+	EstimatedWaitMs int64
 }
 
-type ReleaseRequest struct {
-	Name    string `json:"name" binding:"required"`
-	OwnerID string `json:"owner_id" binding:"required"`
-	Token   uint   `json:"token" binding:"required"`
+type WaitEntryView struct {
+	WaitID    string    `json:"wait_id"`
+	ClientID  string    `json:"client_id"`
+	Position  int       `json:"position"`
+	TimeoutAt time.Time `json:"timeout_at"`
 }
 
-type ReleaseResponse struct {
-	Success bool `json:"success"`
+type LeaseDetail struct {
+	LeaseID    string    `json:"lease_id"`
+	ClientID   string    `json:"client_id"`
+	AcquiredAt time.Time `json:"acquired_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	FenceToken int64     `json:"fence_token"`
 }
 
-// QueueResponse is returned when a lock is queued
-type QueueResponse struct {
-	RequestID string `json:"request_id"`
-	Position  int    `json:"position"`
+type LockStatus struct {
+	LockID   string       `json:"lock_id"`
+	Owner    *LeaseDetail `json:"owner,omitempty"`
+	QueueLen int          `json:"queue_len"`
+	Config   any          `json:"config"`
+	Tags     []string     `json:"tags,omitempty"`
 }
 
-// PollResponse contains the current queue status
-type PollResponse struct {
-	Status   string `json:"status"` // "waiting", "ready", "expired", "not_found"
-	Position int    `json:"position,omitempty"`
-	Lock     *Lock  `json:"lock,omitempty"`
+type StatusResp struct {
+	Status LockStatus `json:"status"`
+}
+
+type QueueGetResp struct {
+	LockID string          `json:"lock_id"`
+	Queue  []WaitEntryView `json:"queue"`
+}
+
+type MetricsResp struct {
+	LockID  string `json:"lock_id"`
+	Metrics any    `json:"metrics"`
 }
