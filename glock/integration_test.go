@@ -2,7 +2,6 @@ package glock
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"testing"
@@ -27,8 +26,7 @@ func startTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	baseURL := "http://" + ln.Addr().String()
 
 	srv, err := servercore.NewServer(servercore.ServerConfig{NumShards: 4})
 	if err != nil {
@@ -52,12 +50,25 @@ func startTestServer(t *testing.T) *testServer {
 		locks.DELETE("/:lock_id/queue/:wait_id", servercore.QueueDelHandler(srv))
 	}
 
-	httpSrv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port), Handler: r}
-	go func() { _ = httpSrv.ListenAndServe() }()
+	httpSrv := &http.Server{Handler: r}
+	go func() { _ = httpSrv.Serve(ln) }()
+
+	deadline := time.Now().Add(1 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not become ready in time")
+		}
+		resp, err := http.Get(baseURL + "/api/locks")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	return &testServer{
 		httpServer: httpSrv,
-		url:        fmt.Sprintf("http://127.0.0.1:%d", port),
+		url:        baseURL,
 		stop: func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
